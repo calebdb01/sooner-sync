@@ -36,57 +36,53 @@ li{margin-bottom:6px}
 <p class="sub">Hear the Sooner radio call, lined up with your TV.</p>
 
 <div class="card">
-  <h2>1. Start the radio</h2>
-  <select id="station">
-    <option value="https://das-edge60-sa48-futuri-chi03.cdnstream.com/11317_96k.aac">107.7 The Franchise (OKC, Sooner flagship)</option>
-    <option value="custom">Other stream link…</option>
-  </select>
-  <input id="custom" placeholder="Paste a direct AAC or MP3 stream link (https://…)" style="display:none">
-  <div class="gap"></div>
   <button class="big" id="play">▶ Play radio</button>
   <div class="status" id="radioStatus" style="min-height:1.4em;margin-top:8px"></div>
+  <details>
+    <summary>Change station</summary>
+    <select id="station">
+      <option value="https://das-edge60-sa48-futuri-chi03.cdnstream.com/11317_96k.aac">107.7 The Franchise (OKC, Sooner flagship)</option>
+      <option value="custom">Other stream link…</option>
+    </select>
+    <input id="custom" placeholder="Paste a direct AAC or MP3 stream link (https://…)" style="display:none">
+    <p><small>Some games are blocked on the web stream for rights reasons. If you hear normal shows and not the game, use a different stream link.</small></p>
+  </details>
 </div>
 
-<div class="card">
-  <h2>2. Sync to the TV</h2>
+<div class="card" id="syncCard" hidden>
   <div class="status" style="min-height:0">Radio delay</div>
-  <div class="delay" id="delayTxt">0.0 s</div>
-  <div class="status" id="status">Start the radio first.</div>
+  <div class="delay" id="delayTxt">Live</div>
+  <div class="status" id="status"></div>
   <div class="gap"></div>
-  <button class="big" id="hold" disabled>⏸ Pause radio</button>
-  <p><small>Radio ahead of the TV? Tap <b>Pause</b> when you hear a play start on the radio. Tap <b>Resume</b> when the TV shows the same moment.</small></p>
+  <button class="big" id="hold">⏸ Pause radio</button>
+  <div class="gap"></div>
   <div class="row">
-    <button data-n="-1" disabled>◀ 1s</button><button data-n="-0.2" disabled>◀ 0.2</button>
-    <button data-n="0.2" disabled>0.2 ▶</button><button data-n="1" disabled>1s ▶</button>
+    <button data-n="-0.25">◀ Radio sooner</button>
+    <button data-n="0.25">Radio later ▶</button>
   </div>
-  <p><small>◀ plays the radio sooner. ▶ plays the radio later.</small></p>
+  <p><small>Small error? Tap Sooner or Later. Hold a button to move faster.</small></p>
   <div class="row">
-    <button id="live" disabled>Go to live</button>
-    <button id="last" disabled>Use last delay</button>
+    <button id="auto">🎤 Auto sync</button>
+    <button id="live">Start over</button>
   </div>
-  <h2 style="margin-top:16px">Auto sync</h2>
-  <button class="big" id="auto" disabled>🎤 Auto sync (hold phone near TV)</button>
   <div class="meter"><div id="micLvl"></div></div>
-  <p><small>The radio goes silent while the phone listens to the TV (20 to 60 seconds). It matches the stadium sound that the TV and the radio share.</small></p>
 </div>
 
 <div class="card">
   <details>
-    <summary>Tips for the best auto sync</summary>
+    <summary>How to use</summary>
     <ul>
-      <li>Let the radio play for 2 minutes before you start auto sync. The app can only match radio that it has saved.</li>
+      <li><b>Manual sync:</b> Tap Pause when the radio calls the snap. Tap Resume when the TV shows that snap. Then use Sooner or Later for small errors.</li>
+      <li><b>Auto sync:</b> The radio goes silent for 20 to 45 seconds while the phone listens to the TV.</li>
       <li>Start auto sync during live play. Do not start it during ads, replays or halftime.</li>
-      <li>Turn the TV volume up. Hold the phone 1 to 3 feet from the TV speaker.</li>
-      <li>Keep the room quiet while the phone listens.</li>
+      <li>Turn the TV volume up. Hold the phone 1 to 3 feet from the TV speaker. Keep the room quiet.</li>
       <li>Do not use Bluetooth earphones during auto sync.</li>
-      <li>Keep this page open and the screen on. Set the ring switch to ring, not silent.</li>
-      <li>If auto sync is not sure, use Pause and Resume. Then adjust with the 0.2 buttons.</li>
       <li>If the radio is behind the TV, pause the TV for some seconds. Then sync again.</li>
     </ul>
   </details>
 </div>
 
-<p><small>Some games are blocked on the web stream for rights reasons. If you hear normal shows and not the game, use a different stream link.</small></p>
+<audio id="audio" playsinline></audio>
 
 <script>
 //<dsp>
@@ -193,7 +189,7 @@ function header(b, i) {
   if (layer === 0 && (b[i + 1] & 0xF0) === 0xF0) {
     const sr = AAC_SR[(b[i + 2] >> 2) & 15], len = ((b[i + 3] & 3) << 11) | (b[i + 4] << 3) | (b[i + 5] >> 5);
     if (!sr || len < 8) return null;
-    return { kind: 'aac', sr, len, dur: 1024 * ((b[i + 6] & 3) + 1) / sr };
+    return { kind: 'aac', sr, len, dur: 1024 * ((b[i + 6] & 3) + 1) / sr, obj: (b[i + 2] >> 6) + 1, sfi: (b[i + 2] >> 2) & 15, ch: ((b[i + 2] & 1) << 2) | (b[i + 3] >> 6) || 2 };
   }
   if (layer === 1) {
     const ver = (b[i + 1] >> 3) & 3, v = ver === 3 ? 3 : 2;
@@ -205,12 +201,51 @@ function header(b, i) {
   return null;
 }
 
+// ---- AAC frames to MP4 pieces, for the browser's own gapless player ----
+const u32 = n => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+const chars = t => [...t].map(c => c.charCodeAt(0));
+const Z = n => new Array(n).fill(0);
+function join(parts) { let n = 0; for (const p of parts) n += p.length; const out = new Uint8Array(n); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; }
+function box(type, ...parts) { let n = 8; for (const p of parts) n += p.length; return join([u32(n), chars(type), ...parts]); }
+function mp4Init(h) {
+  const M = [0, 1, 0, 0, ...Z(12), 0, 1, 0, 0, ...Z(12), 0x40, 0, 0, 0];
+  const cfg = [(h.obj << 3) | (h.sfi >> 1), ((h.sfi & 1) << 7) | (h.ch << 3)];
+  const esds = box('esds', [0, 0, 0, 0, 3, 23 + cfg.length, 0, 1, 0, 4, 15 + cfg.length, 0x40, 0x15, 0, 0, 0, ...Z(8), 5, cfg.length, ...cfg, 6, 1, 2]);
+  const mp4a = box('mp4a', [...Z(6), 0, 1, ...Z(8), 0, h.ch, 0, 16, 0, 0, 0, 0, (h.sr >> 8) & 255, h.sr & 255, 0, 0], esds);
+  const stbl = box('stbl', box('stsd', [0, 0, 0, 0, 0, 0, 0, 1], mp4a), box('stts', Z(8)), box('stsc', Z(8)), box('stsz', Z(12)), box('stco', Z(8)));
+  const minf = box('minf', box('smhd', Z(8)), box('dinf', box('dref', [0, 0, 0, 0, 0, 0, 0, 1], box('url ', [0, 0, 0, 1]))), stbl);
+  const mdia = box('mdia', box('mdhd', [...Z(12), ...u32(h.sr), ...Z(4), 0x55, 0xc4, 0, 0]), box('hdlr', [...Z(8), ...chars('soun'), ...Z(12), ...chars('Sound'), 0]), minf);
+  const trak = box('trak', box('tkhd', [0, 0, 0, 7, ...Z(8), 0, 0, 0, 1, ...Z(16), 0, 0, 0, 0, 1, 0, 0, 0, ...M, ...Z(8)]), mdia);
+  const moov = box('moov', box('mvhd', [...Z(12), ...u32(h.sr), ...Z(4), 0, 1, 0, 0, 1, 0, ...Z(10), ...M, ...Z(24), 0, 0, 0, 2]), trak, box('mvex', box('trex', [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, ...Z(12)])));
+  return join([box('ftyp', [...chars('iso5'), 0, 0, 0, 1, ...chars('iso5'), ...chars('iso6'), ...chars('mp41')]), moov]);
+}
+function mp4Seg(frames, first, spf, seq) {
+  const raw = frames.map(f => f.subarray(f[1] & 1 ? 7 : 9));               // remove the ADTS header
+  const trun = [0, 0, 2, 1, ...u32(raw.length), 0, 0, 0, 0]; for (const f of raw) trun.push(...u32(f.length));
+  const t = first * spf;
+  const traf = box('traf', box('tfhd', [0, 2, 0, 8, 0, 0, 0, 1, ...u32(spf)]), box('tfdt', [1, 0, 0, 0, ...u32(Math.floor(t / 4294967296)), ...u32(t >>> 0)]), box('trun', trun));
+  const moof = box('moof', box('mfhd', [0, 0, 0, 0, ...u32(seq)]), traf);
+  moof.set(u32(moof.length + 8), moof.length - trun.length + 8);            // where the sound data starts
+  return join([moof, box('mdat', ...raw)]);
+}
+const MS = window.ManagedMediaSource || window.MediaSource;
+const FORCE = new URLSearchParams(location.search).get('mode');             // for tests: mp4, raw or wa
+function pickMime(h) {
+  if (!MS || FORCE === 'wa') return null;
+  const ok = m => { try { return MS.isTypeSupported(m); } catch (e) { return false; } };
+  if (h.kind === 'mp3') return ok('audio/mpeg') ? 'audio/mpeg' : null;
+  const mp4 = `audio/mp4; codecs="mp4a.40.${h.obj}"`;
+  if (FORCE !== 'raw' && ok(mp4)) return mp4;
+  return ok('audio/aac') ? 'audio/aac' : null;
+}
+
 const $ = id => document.getElementById(id);
 const wall = () => performance.now() / 1000;
 const HIST = 300, MAXD = 280;        // seconds of radio kept, largest delay
 const XF = 0.004;                    // crossfade between pieces, seconds
 let ctx, master, sink, S = null, lock = null, busyAuto = false;
-let saved = 0; try { saved = parseFloat(localStorage.getItem('ss_delay')) || 0; } catch (e) {}
+const audio = $('audio');
+const GUIDE = 'Radio ahead of the TV? Tap Pause when the radio calls the snap.';
 
 $('station').onchange = () => $('custom').style.display = $('station').value === 'custom' ? 'block' : 'none';
 const say = t => $('status').textContent = t;
@@ -221,7 +256,7 @@ function setup() {
   master = ctx.createGain(); master.connect(ctx.destination);
   sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
   session('playback');
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && S) { ctx.resume(); keepAwake(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S) { ctx.resume(); keepAwake(); S.force = true; } });
 }
 // iPhone: play even when the ring switch is on silent, where the browser allows this.
 function session(type) { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch (e) {} }
@@ -231,7 +266,8 @@ function newSession() {
   return { ac: new AbortController(), frames: [], base: 0, total: 0, kind: null, fd: 0, N: 0, P: 0, Q: 0, dur: 0,
     chunks: new Map(), feat: new Feat(ctx.sampleRate), featT0: null, aNext: 0, busy: false, bad: 0, ok: 0,
     L: -Infinity, D: 0, minD: 1, started: false, held: false, heldMedia: 0, release: null,
-    offset: NaN, next: 0, under: false, sources: new Set(), t0: wall() };
+    offset: NaN, next: 0, under: false, sources: new Set(), t0: wall(),
+    mode: null, hdr: null, ms: null, sb: null, mime: null, appended: 0, seq: 1, force: true, seekAt: 0 };
 }
 
 async function read(url, s) {
@@ -252,9 +288,10 @@ async function read(url, s) {
       const h2 = header(b, i + h.len);
       if (!h2 || h2.kind !== h.kind || h2.sr !== h.sr) { i++; continue; }
       if (!s.kind) {
-        s.kind = h.kind; s.sr = h.sr; s.fd = h.dur;
+        s.kind = h.kind; s.sr = h.sr; s.fd = h.dur; s.hdr = h;
         s.N = Math.max(1, Math.round(0.5 / s.fd)); s.P = Math.ceil(0.25 / s.fd); s.Q = Math.ceil(0.12 / s.fd);
         s.dur = s.N * s.fd; s.minD = s.dur + s.Q * s.fd + 0.45;
+        chooseMode(s);
       }
       s.frames.push(b.slice(i, i + h.len)); s.total++; i += h.len;
     }
@@ -264,11 +301,65 @@ async function read(url, s) {
   }
 }
 
+// Use the browser's own player when it can take the stream (smooth sound). If not, play with Web Audio.
+async function chooseMode(s) {
+  s.mime = s.ms ? pickMime(s.hdr) : null;
+  if (s.mime) {
+    await s.msOpen;
+    if (S !== s) return;
+    try {
+      s.sb = s.ms.addSourceBuffer(s.mime);
+      s.sb.addEventListener('updateend', () => pump(s));
+      const fail = () => { if (S === s && s.mode === 'mse') { s.sb = null; chooseFallback(s); s.offset = NaN; } };
+      s.sb.addEventListener('error', fail); audio.onerror = fail;   // player refused the stream: use Web Audio
+      s.mode = 'mse'; s.minD = Math.max(s.minD, 1.5);
+      pump(s); return;
+    } catch (e) {}
+  }
+  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {}
+  s.mode = 'wa';
+}
+function attach(s) {
+  s.ms = null;
+  if (!MS || FORCE === 'wa') return;
+  try {
+    const ms = new MS();
+    s.msOpen = new Promise(ok => ms.addEventListener('sourceopen', ok, { once: true }));
+    audio.disableRemotePlayback = true;                         // needed by iPhone for this kind of player
+    audio.src = URL.createObjectURL(ms);
+    audio.muted = false; audio.playbackRate = 1;
+    audio.play().catch(() => {});
+    s.ms = ms;
+  } catch (e) { s.ms = null; }
+}
+// Give new radio to the browser's player, and drop radio that is too old.
+function pump(s) {
+  const sb = s.sb; if (S !== s || !sb || sb.updating) return;
+  try {
+    const b = sb.buffered;
+    if (b.length && b.end(b.length - 1) - b.start(0) > HIST + 40) { sb.remove(b.start(0), b.end(b.length - 1) - HIST); return; }
+    if (s.appended < s.base) s.appended = s.base;
+    if (s.appended >= s.total) return;
+    const fr = s.frames.slice(s.appended - s.base);
+    let data;
+    if (s.mime.startsWith('audio/mp4')) {
+      data = mp4Seg(fr, s.appended, Math.round(s.fd * s.sr), s.seq++);
+      if (s.appended === 0) data = join([mp4Init(s.hdr), data]);
+    } else data = join(fr);
+    sb.appendBuffer(data); s.appended = s.total;
+  } catch (e) {
+    if (e.name === 'QuotaExceededError') { try { sb.remove(0, Math.max(1, audio.currentTime - 30)); } catch (x) {} }
+    else if (!s.started) { s.sb = null; chooseFallback(s); }
+  }
+}
+function chooseFallback(s) { try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {} s.mode = 'wa'; s.minD = s.dur + s.Q * s.fd + 0.45; }
+
 function arrived(s) {
   s.L = Math.max(s.L, s.total * s.fd - wall());                 // live radio at clock time t is t + L
   const extra = s.frames.length - Math.ceil((HIST + 10) / s.fd);
   if (extra > 0) { const k = Math.ceil(extra / s.N) * s.N; s.frames.splice(0, k); s.base += k; }
-  if (!s.started && s.total * s.fd > 1.5 && wall() - s.t0 > 0.8) { s.started = true; s.D = s.keepD || s.minD; enable(true); say(s.keepD ? 'Stream connected again. Check the sync.' : 'Radio is live. Now sync it to the TV.'); }
+  if (s.mode === 'mse') pump(s);
+  if (!s.started && s.mode && s.total * s.fd > 1.5 && wall() - s.t0 > 0.8) { s.started = true; s.D = s.keepD || s.minD; enable(true); say(s.keepD ? 'Stream connected again. Check the sync.' : GUIDE); }
   analyse(s);
 }
 
@@ -317,9 +408,10 @@ function tick() {
   const now = ctx.currentTime;
   if (s.held) {
     const d = curDelay(s);
-    if ((s.release != null && d >= s.release) || d > MAXD || s.heldMedia < s.base * s.fd + 0.5) resume(s, s.release == null);
+    if ((s.release != null && d >= s.release) || d > MAXD || s.heldMedia < s.base * s.fd + 0.5) resume(s);
   }
-  if (!s.held) {
+  if (!s.held && s.mode === 'mse') steer(s);
+  if (!s.held && s.mode === 'wa') {
     // Radio position p plays at clock time p + D - L. Convert to audio time, and re-aim after any stall.
     const want = s.D - s.L + (now - wall());
     if (!(Math.abs(want - s.offset) < 0.15)) { s.offset = want; cut(s); s.next = Math.floor((now - s.offset) / s.dur); s.under = false; }
@@ -351,53 +443,61 @@ function tick() {
   draw(s);
 }
 
+// Browser player: keep its position at (live radio - delay). Small errors are corrected with a tiny
+// speed change. Large errors, and changes made by the user, are corrected with a jump.
+function steer(s) {
+  const b = audio.buffered; if (!b.length) return;
+  const bs = b.start(0), be = b.end(b.length - 1), target = wall() + s.L - s.D;
+  if (audio.paused) audio.play().catch(() => {});
+  if (target > be - 0.15) return;                               // that radio has not arrived yet
+  const e = audio.currentTime - target;
+  if (s.force || Math.abs(e) > 0.35) {
+    if (s.force || wall() - s.seekAt > 1) { audio.currentTime = Math.max(bs + 0.05, target + 0.02); audio.playbackRate = 1; s.seekAt = wall(); s.force = false; }
+  } else audio.playbackRate = Math.abs(e) < 0.03 ? 1 : 1 - Math.max(-0.04, Math.min(0.04, e * 0.4));
+}
+const position = s => s.mode === 'mse' ? audio.currentTime : ctx.currentTime - s.offset;
+
 function draw(s) {
   const d = curDelay(s);
-  $('delayTxt').textContent = (d - s.minD < 0.05 ? 'Live' : d.toFixed(1) + ' s');
-  $('hold').textContent = s.held ? (s.release != null ? `Waiting… ${Math.max(0, s.release - d).toFixed(0)} s (tap to play now)` : '▶ Resume radio') : '⏸ Pause radio';
+  $('delayTxt').textContent = (!s.held && d - s.minD < 0.05 ? 'Live' : d.toFixed(1) + ' s');
+  $('hold').textContent = s.held ? (s.release != null ? `Waiting ${Math.max(0, s.release - d).toFixed(0)} s… (tap to play now)` : '▶ TV shows it now: Resume') : '⏸ Pause radio';
   $('hold').classList.toggle('on', s.held);
   const have = Math.max(0, (s.total - s.base) * s.fd);
   $('radioStatus').textContent = `Radio saved: ${Math.floor(have / 60)}:${String(Math.floor(have % 60)).padStart(2, '0')}`;
+  if (!busyAuto) { $('auto').disabled = have < AUTO_MIN; $('auto').textContent = have < AUTO_MIN ? `🎤 Auto sync in ${Math.ceil(AUTO_MIN - have)} s` : '🎤 Auto sync'; }
 }
+const AUTO_MIN = 45;                 // seconds of saved radio needed before auto sync
 
-function remember(d) { saved = d; try { localStorage.setItem('ss_delay', d.toFixed(2)); } catch (e) {} lastBtn(); }
-function lastBtn() { $('last').textContent = saved > 1.5 ? `Use last delay (${saved.toFixed(1)} s)` : 'Use last delay'; $('last').disabled = !(S && S.started && saved > 1.5); }
-function hold(s) { s.held = true; s.release = null; s.heldMedia = ctx.currentTime - s.offset; cut(s); }
-function resume(s, keep) { s.D = Math.max(s.minD, Math.min(MAXD, wall() + s.L - s.heldMedia)); s.held = false; s.release = null; s.offset = NaN; if (keep) remember(s.D); }
+function hold(s) { s.held = true; s.release = null; s.heldMedia = position(s); if (s.mode === 'mse') audio.pause(); cut(s); }
+function resume(s) { s.D = Math.max(s.minD, Math.min(MAXD, wall() + s.L - s.heldMedia)); s.held = false; s.release = null; s.offset = NaN; s.force = true; }
 // Set the delay. If the app has not saved enough radio yet, wait silently until it has.
-function setDelay(s, d, keep) {
+function setDelay(s, d) {
   d = Math.max(s.minD, Math.min(MAXD, d));
   const oldest = s.base * s.fd + s.P * s.fd + 0.3, pos = wall() + s.L - d;
-  if (pos < oldest) { s.held = true; s.release = d; s.heldMedia = oldest; cut(s); }
-  else { s.D = d; s.held = false; s.release = null; }
-  if (keep) remember(d);
+  if (pos < oldest) { s.held = true; s.release = d; s.heldMedia = oldest; if (s.mode === 'mse') audio.pause(); cut(s); }
+  else { s.D = d; s.held = false; s.release = null; s.force = true; }
 }
 
-function enable(on) {
-  ['hold', 'live', 'auto'].forEach(id => $(id).disabled = !on || (id === 'auto' && busyAuto));
-  document.querySelectorAll('[data-n]').forEach(b => b.disabled = !on);
-  lastBtn();
-}
+function enable(on) { $('syncCard').hidden = !on; }
 
 function stop(msg) {
   const s = S; S = null;
   if (s) { s.ac.abort(); cut(s); }
+  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {}
   enable(false);
-  $('play').textContent = '▶ Play radio'; $('radioStatus').textContent = ''; $('delayTxt').textContent = '0.0 s';
-  $('hold').textContent = '⏸ Pause radio'; $('hold').classList.remove('on');
-  say(msg || 'Start the radio first.');
+  $('play').textContent = '▶ Play radio'; $('radioStatus').textContent = msg || '';
   if (lock) { try { lock.release(); } catch (e) {} lock = null; }
 }
 
 async function start(url, keepD, tries) {
-  const s = S = newSession(); s.keepD = keepD;
+  const s = S = newSession(); s.keepD = keepD; attach(s);
   try { await read(url, s); }
   catch (e) {
     if (S !== s) return;                                        // stopped by the user
     const wasPlaying = s.started, d = wasPlaying ? curDelay(s) : keepD;
     cut(s);
     if (wasPlaying || (tries || 0) < 2) {
-      say('Stream lost. Connecting again…'); enable(false);
+      $('radioStatus').textContent = 'Stream lost. Connecting again…';
       await new Promise(r => setTimeout(r, 1500));
       if (S === s) start(url, d, wasPlaying ? 0 : (tries || 0) + 1);
     } else stop('Could not play this stream: ' + (/load failed|failed to fetch|networkerror/i.test(e.message) ? 'the station did not answer, or it does not allow web players' : e.message) + '.');
@@ -411,15 +511,27 @@ $('play').onclick = async () => {
   setup();
   try { await ctx.resume(); } catch (e) {}
   keepAwake();
-  $('play').textContent = '⏹ Stop radio'; say('Connecting…');
+  $('play').textContent = '⏹ Stop radio'; $('radioStatus').textContent = 'Connecting…';
   start(url);
 };
 setInterval(tick, 60);
 
-$('hold').onclick = () => { const s = S; if (!s) return; if (s.held) { resume(s, true); say('Radio resumed. Adjust with the arrows if needed.'); } else { hold(s); say('Radio paused. Tap Resume when the TV shows the same moment.'); } };
-$('live').onclick = () => { if (S) { setDelay(S, 0, true); say('Radio is live.'); } };
-$('last').onclick = () => { if (S && saved) { setDelay(S, saved); say('Last delay set. Check it and adjust.'); } };
-document.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { const s = S; if (!s) return; setDelay(s, curDelay(s) + parseFloat(b.dataset.n), true); });
+const AFTER = 'If it is a little off, tap Sooner or Later.';
+$('hold').onclick = () => {
+  const s = S; if (!s || !s.started) return;
+  if (s.held) { resume(s); say('Radio resumed. ' + AFTER); }
+  else { hold(s); say('Radio paused. Tap the button when the TV shows the same snap.'); }
+};
+$('live').onclick = () => { if (S && S.started) { setDelay(S, 0); say(GUIDE); } };
+// Sooner / Later: one step for a tap, repeated steps while the button is held.
+document.querySelectorAll('[data-n]').forEach(b => {
+  let rep = null, wait = null;
+  const step = () => { const s = S; if (s && s.started) { setDelay(s, curDelay(s) + parseFloat(b.dataset.n)); say(AFTER); } };
+  const end = () => { clearTimeout(wait); clearInterval(rep); };
+  b.addEventListener('pointerdown', () => { end(); step(); wait = setTimeout(() => rep = setInterval(step, 120), 450); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, end));
+  b.addEventListener('contextmenu', e => e.preventDefault());
+});
 
 // ---- Auto sync ----
 $('auto').onclick = async () => {
@@ -429,10 +541,10 @@ $('auto').onclick = async () => {
   let stream;
   session('play-and-record');
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
-  catch (e) { session('playback'); busyAuto = false; $('auto').disabled = false; say('Microphone blocked: ' + e.message); return; }
+  catch (e) { session('playback'); busyAuto = false; say('Microphone blocked: ' + e.message); return; }
   try { await ctx.resume(); } catch (e) {}
   if (s.held) resume(s);
-  master.gain.value = 0;                                        // radio silent, so the phone hears only the TV
+  master.gain.value = 0; audio.muted = true;                    // radio silent, so the phone hears only the TV
   const rate = ctx.sampleRate, mic = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(4096, 1, 1), feat = new Feat(rate);
   let micT0 = null, peak = 0, lvl = 0;
   node.onaudioprocess = ev => {
@@ -443,7 +555,7 @@ $('auto').onclick = async () => {
     feat.push(x);
   };
   mic.connect(node); node.connect(sink);
-  const MIN = 20, MAX = 60, hop = feat.hop / rate;
+  const MIN = 20, MAX = 45, hop = feat.hop / rate;
   // Audio-time offset that lines the radio up with the TV, for a match at radio index r.at.
   const offsetFor = r => micT0 - (s.featT0 + (s.feat.base + r.at) * hop);
   let found = null, prev = null, tried = MIN - 5, r = null, shown = null;
@@ -452,7 +564,7 @@ $('auto').onclick = async () => {
     await new Promise(res => setTimeout(res, 250));
     const t = feat.n / FPS;
     $('micLvl').style.width = Math.max(0, Math.min(100, (20 * Math.log10(lvl + 1e-9) + 70) / 60 * 100)) + '%';
-    say(`Listening to the TV… ${Math.max(0, Math.ceil(MAX - t))} s or less. Keep the phone near the TV.`);
+    say(`Listening to the TV… up to ${Math.max(0, Math.ceil(MAX - t))} s. Keep the phone near the TV speaker.`);
     if (wall() - begin > 4 && peak < 1e-5) break;               // microphone is silent
     if (wall() - begin > MAX + 8) break;
     if (t >= tried + 5 || t >= MAX) {
@@ -463,8 +575,8 @@ $('auto').onclick = async () => {
       if (off != null && prev != null && Math.abs(off - prev) < 0.3) found = off;
       prev = off;
       if (found == null && t >= MAX) {
-        // Last try with the first 30 seconds only. This can also find a radio that is behind the TV.
-        const r2 = locate(feat.E, 0, 30 * FPS, s.feat.E);
+        // Last try with the first 25 seconds only. This can also find a radio that is behind the TV.
+        const r2 = locate(feat.E, 0, 25 * FPS, s.feat.E);
         if (sure(r2) && r2.best - Math.max(0, r2.second) > 0.25) { found = offsetFor(r2); shown = r2; }
         break;
       }
@@ -474,14 +586,13 @@ $('auto').onclick = async () => {
   mic.disconnect(); node.disconnect(); node.onaudioprocess = null;
   session('playback');
   try { await ctx.resume(); } catch (e) {}
-  master.gain.value = 1;
+  master.gain.value = 1; audio.muted = false;
   $('micLvl').style.width = '0'; busyAuto = false;
   if (S !== s) return;
-  $('auto').disabled = false;
   const have = (s.total - s.base) * s.fd;
   if (peak < 1e-5) { say('The microphone gave no sound. Allow the microphone for this page, then try again.'); return; }
   if (found == null) {
-    say(`Not sure${shown ? ` (match ${Math.round(Math.max(0, shown.best) * 100)}%)` : ''}. ` + (have < 120 ? `Only ${Math.round(have)} s of radio is saved. Wait until 2:00, then try again.` : 'Try again during live play with the TV louder, or use Pause and Resume.'));
+    say(`Not sure${shown ? ` (match ${Math.round(Math.max(0, shown.best) * 100)}%)` : ''}. ` + (have < 150 ? 'Try again in one minute, during live play. Or use Pause.' : 'Try again during live play with the TV louder. Or use Pause.'));
     return;
   }
   const d = found - (ctx.currentTime - wall()) + s.L;           // delay that this match needs
@@ -489,8 +600,8 @@ $('auto').onclick = async () => {
     say(`The radio is about ${Math.ceil(s.minD - d)} s behind the TV. Pause the TV for ${Math.ceil(s.minD - d) + 2} s or more, then run auto sync again.`);
     return;
   }
-  setDelay(s, d, true);
-  say(`Synced ✓ (match ${Math.round(shown.best * 100)}%). Adjust with the 0.2 arrows if needed.`);
+  setDelay(s, d);
+  say(`Synced ✓ (match ${Math.round(shown.best * 100)}%). ` + AFTER);
 };
 </script>
 </body>
