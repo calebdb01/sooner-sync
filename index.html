@@ -74,19 +74,28 @@ const $ = id => document.getElementById(id);
 const RATE = 20;                 // loudness samples per second
 const KEEP = 180 * RATE;         // keep 3 minutes of radio loudness
 const MAXLAG = 170;              // seconds
-let ctx, src, delayNode, gainNode, radioAn, radioEnv = [], radioT0 = 0, timer;
+let ctx, src, delayNode, gainNode, sink, radioAn, timer;
+let radioEnv = [], radioBase = 0, radioStart = 0;   // radioEnv[0] is sample number radioBase since radioStart
 let delay = 0, tapRadioT = null;
 
 $('station').onchange = () => $('custom').style.display = $('station').value === 'custom' ? 'block' : 'none';
 try { const d = parseFloat(localStorage.getItem('ss_delay')); if (d >= 0) setDelay(d, true); } catch (e) {}
 
-// Loudness of crowd, whistle and band sounds (above 3.5 kHz), not announcer voices.
-function rms(an, buf) {
+// Power of crowd, whistle and band sounds (above 3.5 kHz), not announcer voices.
+function level(an) {
   if (!an._f) an._f = new Float32Array(an.frequencyBinCount);
   an.getFloatFrequencyData(an._f);
-  const hz = ctx.sampleRate / an.fftSize, lo = Math.round(3500 / hz), hi = Math.round(10000 / hz);
-  let s = 0; for (let i = lo; i < hi; i++) s += Math.pow(10, an._f[i] / 10);
-  return Math.sqrt(s / (hi - lo));
+  const hz = ctx.sampleRate / an.fftSize, lo = Math.round(3500 / hz), hi = Math.min(an._f.length, Math.round(10000 / hz));
+  let s = 0; for (let i = lo; i < hi; i++) { const p = Math.pow(10, an._f[i] / 10); if (isFinite(p)) s += p; }
+  return s / (hi - lo);
+}
+const dB = v => 10 * Math.log10(v + 1e-20);
+// Meter: -110 dB (silence) to -40 dB (loud) across the bar.
+const pct = v => Math.max(0, Math.min(100, (dB(v) + 110) / 70 * 100)) + '%';
+function analyser() {
+  const an = ctx.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
+  an.connect(sink);                             // Safari only runs nodes that reach the output
+  return an;
 }
 
 function setDelay(d, quiet) {
@@ -104,7 +113,8 @@ $('play').onclick = async () => {
     src = ctx.createMediaElementSource(a);
     delayNode = ctx.createDelay(179);
     gainNode = ctx.createGain();
-    radioAn = ctx.createAnalyser(); radioAn.fftSize = 2048;
+    sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
+    radioAn = analyser();
     src.connect(radioAn);                       // live radio, before delay
     src.connect(delayNode).connect(gainNode).connect(ctx.destination);
     setDelay(delay);
@@ -119,79 +129,100 @@ $('play').onclick = async () => {
   $('play').textContent = '⏸ Stop radio';
   $('status').textContent = 'Radio playing. Now sync it.';
   ['auto', 'tapRadio', 'tapTV'].forEach(id => $(id).disabled = false);
-  radioEnv = []; radioT0 = performance.now();
-  const buf = new Float32Array(radioAn.fftSize);
+  radioEnv = []; radioBase = 0; radioStart = performance.now();
   clearInterval(timer);
   timer = setInterval(() => {
-    const v = rms(radioAn, buf);
-    radioEnv.push(v); if (radioEnv.length > KEEP) { radioEnv.shift(); radioT0 += 1000 / RATE; }
-    $('radioLvl').style.width = Math.min(100, Math.sqrt(v) * 300) + '%';
+    const v = level(radioAn);
+    // Fill by clock time, so a late timer does not shift the time line.
+    const n = Math.floor((performance.now() - radioStart) / 1000 * RATE);
+    while (radioBase + radioEnv.length < n) radioEnv.push(v);
+    while (radioEnv.length > KEEP) { radioEnv.shift(); radioBase++; }
+    $('radioLvl').style.width = pct(v);
   }, 1000 / RATE);
 };
 
 // Turn loudness into "sudden change" signal so crowd roars and whistles stand out.
-function onsets(x) {
+function rises(x) {
+  const sorted = Float64Array.from(x).sort(), floor = sorted[sorted.length >> 1] * 0.05 + 1e-20;
   const out = new Float32Array(x.length);
-  for (let i = 1; i < x.length; i++) out[i] = Math.max(0, Math.log(x[i] + 1e-4) - Math.log(x[i - 1] + 1e-4));
-  let m = 0; for (const v of out) m += v; m /= out.length;
-  let s = 0; for (let i = 0; i < out.length; i++) { out[i] -= m; s += out[i] * out[i]; }
+  for (let i = 1; i < x.length; i++) out[i] = Math.max(0, Math.log(x[i] + floor) - Math.log(x[i - 1] + floor));
+  return out;
+}
+// Subtract the mean and scale to unit length.
+function norm(x) {
+  const out = new Float32Array(x.length);
+  let m = 0; for (const v of x) m += v; m /= x.length;
+  let s = 0; for (let i = 0; i < x.length; i++) { out[i] = x[i] - m; s += out[i] * out[i]; }
   s = Math.sqrt(s) || 1; for (let i = 0; i < out.length; i++) out[i] /= s;
   return out;
 }
 
 $('auto').onclick = async () => {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    $('status').textContent = 'This browser gives no microphone access. Open the page with https in Safari.'; return;
+  }
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
   } catch (e) { $('status').textContent = 'Microphone blocked: ' + e.message; return; }
-  const SECS = 30;
+  const SECS = 30, a = $('audio');
   $('auto').disabled = true;
   gainNode.gain.value = 0;                     // mute radio so the mic only hears the TV
+  // iPhone can stop the audio when the microphone starts. Start it again.
+  try { if (ctx.state !== 'running') await ctx.resume(); if (a.paused) await a.play(); } catch (e) {}
   const mic = ctx.createMediaStreamSource(stream);
-  const an = ctx.createAnalyser(); an.fftSize = 2048; mic.connect(an);
-  const buf = new Float32Array(an.fftSize), micEnv = [];
-  const startIdx = radioEnv.length, startT0 = radioT0;
+  const an = analyser(); mic.connect(an);
+  const micEnv = [], micT0 = performance.now();
+  const micAbs = Math.floor((micT0 - radioStart) / 1000 * RATE);   // radio sample number where listening began
+  let peak = 0;
   await new Promise(done => {
     const t = setInterval(() => {
-      const v = rms(an, buf); micEnv.push(v);
-      $('micLvl').style.width = Math.min(100, Math.sqrt(v) * 300) + '%';
+      const v = level(an); if (v > peak) peak = v;
+      const n = Math.min(SECS * RATE, Math.floor((performance.now() - micT0) / 1000 * RATE));
+      while (micEnv.length < n) micEnv.push(v);
+      $('micLvl').style.width = pct(v);
       $('status').textContent = `Listening to TV… ${Math.ceil(SECS - micEnv.length / RATE)}s`;
       if (micEnv.length >= SECS * RATE) { clearInterval(t); done(); }
     }, 1000 / RATE);
   });
   stream.getTracks().forEach(t => t.stop());
+  mic.disconnect(); an.disconnect();
   gainNode.gain.value = 1;
+  try { if (ctx.state !== 'running') await ctx.resume(); if (a.paused) await a.play(); } catch (e) {}
   $('micLvl').style.width = '0';
   $('auto').disabled = false;
 
-  // Radio samples that line up in time with the mic samples (index shift if buffer trimmed).
-  const shift = Math.round((radioT0 - startT0) / (1000 / RATE));
-  const micStart = startIdx - shift;            // index in radioEnv where listening began
-  const M = onsets(micEnv);
+  if (dB(peak) < -105) {
+    $('status').textContent = 'The microphone gave no sound. Make sure Safari is allowed to use the microphone, then try again.';
+    return;
+  }
+  const micStart = micAbs - radioBase;          // index in radioEnv where listening began
+  const M = norm(rises(micEnv)), R = rises(radioEnv);
   let best = -1, bestLag = 0, scores = [];
   for (let lag = 0; lag <= MAXLAG * RATE; lag++) {
     const s0 = micStart - lag;
     if (s0 < 1) break;
-    const seg = onsets(radioEnv.slice(s0, s0 + M.length));
-    if (seg.length < M.length) continue;
+    if (s0 + M.length > R.length) continue;
+    const seg = norm(R.subarray(s0, s0 + M.length));
     let c = 0; for (let i = 0; i < M.length; i++) c += M[i] * seg[i];
     scores.push(c);
     if (c > best) { best = c; bestLag = lag; }
   }
+  const lvl = ` Mic level ${dB(peak).toFixed(0)} dB.`;
   if (!scores.length) { $('status').textContent = 'Need more radio first. Let it play 30 seconds, then try again.'; return; }
   const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
   const sd = Math.sqrt(scores.reduce((a, b) => a + (b - mean) ** 2, 0) / scores.length) || 1;
   const z = (best - mean) / sd;
-  const maxBack = ((micStart) / RATE).toFixed(0);
+  const maxBack = Math.round(micStart / RATE);
   let second = -1;
   scores.forEach((v, l) => { if (Math.abs(l - bestLag) > 2 * RATE && v > second) second = v; });
-  const ratio = best / (second || 1e-9);
+  const ratio = second > 0 ? best / second : 99;
   if (z < 5 || ratio < 1.25) {
-    $('status').textContent = `Not sure (score ${z.toFixed(1)}, ${ratio.toFixed(2)}). Try during live play, or use tap sync.` + (maxBack < 60 ? ` Radio has only ${maxBack}s saved; wait a bit.` : '');
+    $('status').textContent = `Not sure (score ${z.toFixed(1)}, ${ratio.toFixed(2)}).${lvl} Try during live play, or use tap sync.` + (maxBack < 60 ? ` Radio has only ${maxBack}s saved; wait a bit.` : '');
     return;
   }
   setDelay(bestLag / RATE);
-  $('status').textContent = `Synced ✓ (match score ${z.toFixed(1)}). Fine tune if needed.`;
+  $('status').textContent = `Synced ✓ (match score ${z.toFixed(1)}).${lvl} Fine tune if needed.`;
 };
 
 $('tapRadio').onclick = () => { tapRadioT = performance.now(); $('status').textContent = 'Now tap 2 when the TV shows it.'; };
