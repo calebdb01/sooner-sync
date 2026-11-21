@@ -66,6 +66,9 @@ li{margin-bottom:6px}
     <button id="live">Start over</button>
   </div>
   <div class="meter"><div id="micLvl"></div></div>
+  <div class="gap"></div>
+  <button id="send" hidden style="width:100%">📤 Send test recording</button>
+  <p id="sendNote" hidden><small>This saves what the phone heard from the TV, and the radio from the same time. Send the file to the developer to make auto sync better.</small></p>
 </div>
 
 <div class="card">
@@ -256,7 +259,7 @@ function setup() {
   master = ctx.createGain(); master.connect(ctx.destination);
   sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
   session('playback');
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && S) { ctx.resume(); keepAwake(); S.force = true; } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && S) { ctx.resume(); keepAwake(); } });
 }
 // iPhone: play even when the ring switch is on silent, where the browser allows this.
 function session(type) { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch (e) {} }
@@ -267,7 +270,7 @@ function newSession() {
     chunks: new Map(), feat: new Feat(ctx.sampleRate), featT0: null, aNext: 0, busy: false, bad: 0, ok: 0,
     L: -Infinity, D: 0, minD: 1, started: false, held: false, heldMedia: 0, release: null,
     offset: NaN, next: 0, under: false, sources: new Set(), t0: wall(),
-    mode: null, hdr: null, ms: null, sb: null, mime: null, appended: 0, seq: 1, force: true, seekAt: 0 };
+    Lt: wall(), lastT: -1, movedAt: wall(), mode: null, hdr: null, ms: null, sb: null, mime: null, appended: 0, seq: 1, force: true, seekAt: 0 };
 }
 
 async function read(url, s) {
@@ -290,7 +293,7 @@ async function read(url, s) {
       if (!s.kind) {
         s.kind = h.kind; s.sr = h.sr; s.fd = h.dur; s.hdr = h;
         s.N = Math.max(1, Math.round(0.5 / s.fd)); s.P = Math.ceil(0.25 / s.fd); s.Q = Math.ceil(0.12 / s.fd);
-        s.dur = s.N * s.fd; s.minD = s.dur + s.Q * s.fd + 0.45;
+        s.dur = s.N * s.fd; s.minD = s.dur + s.Q * s.fd + 0.8;
         chooseMode(s);
       }
       s.frames.push(b.slice(i, i + h.len)); s.total++; i += h.len;
@@ -305,14 +308,14 @@ async function read(url, s) {
 async function chooseMode(s) {
   s.mime = s.ms ? pickMime(s.hdr) : null;
   if (s.mime) {
-    await s.msOpen;
+    const opened = await Promise.race([s.msOpen.then(() => true), new Promise(r => setTimeout(() => r(false), 3000))]);
     if (S !== s) return;
-    try {
+    if (opened) try {
       s.sb = s.ms.addSourceBuffer(s.mime);
       s.sb.addEventListener('updateend', () => pump(s));
       const fail = () => { if (S === s && s.mode === 'mse') { s.sb = null; chooseFallback(s); s.offset = NaN; } };
       s.sb.addEventListener('error', fail); audio.onerror = fail;   // player refused the stream: use Web Audio
-      s.mode = 'mse'; s.minD = Math.max(s.minD, 1.5);
+      s.mode = 'mse'; s.minD = 2.5;
       pump(s); return;
     } catch (e) {}
   }
@@ -349,17 +352,19 @@ function pump(s) {
     sb.appendBuffer(data); s.appended = s.total;
   } catch (e) {
     if (e.name === 'QuotaExceededError') { try { sb.remove(0, Math.max(1, audio.currentTime - 30)); } catch (x) {} }
-    else if (!s.started) { s.sb = null; chooseFallback(s); }
+    else { s.sb = null; chooseFallback(s); }
   }
 }
-function chooseFallback(s) { try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {} s.mode = 'wa'; s.minD = s.dur + s.Q * s.fd + 0.45; }
+function chooseFallback(s) { try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {} s.mode = 'wa'; s.minD = s.dur + s.Q * s.fd + 0.8; s.D = Math.max(s.D, s.minD); s.offset = NaN; }
 
 function arrived(s) {
-  s.L = Math.max(s.L, s.total * s.fd - wall());                 // live radio at clock time t is t + L
+  const l = s.total * s.fd - wall();                            // live radio at clock time t is t + L
+  if (l > s.L + 0.2) s.Lt = wall();                             // the station still sends its start burst
+  s.L = Math.max(s.L, l);
   const extra = s.frames.length - Math.ceil((HIST + 10) / s.fd);
   if (extra > 0) { const k = Math.ceil(extra / s.N) * s.N; s.frames.splice(0, k); s.base += k; }
   if (s.mode === 'mse') pump(s);
-  if (!s.started && s.mode && s.total * s.fd > 1.5 && wall() - s.t0 > 0.8) { s.started = true; s.D = s.keepD || s.minD; enable(true); say(s.keepD ? 'Stream connected again. Check the sync.' : GUIDE); }
+  if (!s.started && s.mode && s.total * s.fd > 1.5 && wall() - s.Lt > 1.2) { s.started = true; s.D = s.keepD || s.minD; enable(true); say(s.keepD ? 'Stream connected again. Check the sync.' : GUIDE); }
   analyse(s);
 }
 
@@ -374,7 +379,7 @@ function getChunk(s, c) {
   for (let i = a; i < b; i++) { bytes.set(s.frames[i - s.base], o); o += s.frames[i - s.base].length; }
   e = { pre: (c * s.N - a) * s.fd, buf: null, err: false };
   e.p = new Promise((ok, no) => { const p = ctx.decodeAudioData(bytes.buffer, ok, no); if (p && p.catch) p.catch(() => {}); })
-    .then(buf => { e.buf = buf; s.ok++; }, () => { e.err = true; s.bad++; });
+    .then(buf => { e.buf = buf; e.pre = Math.max(0, buf.duration - (b - c * s.N) * s.fd); s.ok++; }, () => { e.err = true; s.bad++; });
   s.chunks.set(c, e); return e;
 }
 
@@ -410,14 +415,14 @@ function tick() {
     const d = curDelay(s);
     if ((s.release != null && d >= s.release) || d > MAXD || s.heldMedia < s.base * s.fd + 0.5) resume(s);
   }
-  if (!s.held && s.mode === 'mse') steer(s);
+  if (s.mode === 'mse') runMse(s);
   if (!s.held && s.mode === 'wa') {
     // Radio position p plays at clock time p + D - L. Convert to audio time, and re-aim after any stall.
     const want = s.D - s.L + (now - wall());
     if (!(Math.abs(want - s.offset) < 0.15)) { s.offset = want; cut(s); s.next = Math.floor((now - s.offset) / s.dur); s.under = false; }
     for (;;) {
       const c = s.next; let t0 = c * s.dur + s.offset;
-      if (t0 > now + 0.6) break;
+      if (t0 > now + 1.0) break;
       if (c * s.N < s.base) { s.next++; continue; }
       const e = getChunk(s, c);
       if (!e) { s.under = true; break; }                        // this radio has not arrived yet
@@ -443,17 +448,22 @@ function tick() {
   draw(s);
 }
 
-// Browser player: keep its position at (live radio - delay). Small errors are corrected with a tiny
-// speed change. Large errors, and changes made by the user, are corrected with a jump.
-function steer(s) {
+// Browser player: it plays by itself with no correction, so the sound stays clean.
+// The position changes only when the user (or auto sync) sets a delay.
+function seekTo(pos) {
   const b = audio.buffered; if (!b.length) return;
-  const bs = b.start(0), be = b.end(b.length - 1), target = wall() + s.L - s.D;
+  audio.currentTime = Math.max(b.start(0) + 0.05, Math.min(pos, b.end(b.length - 1) - 0.3));
+}
+function runMse(s) {
+  if (!audio.buffered.length) return;
+  if (s.force) { s.force = false; setDelay(s, s.keepD || s.minD); return; }
+  if (s.held) return;
   if (audio.paused) audio.play().catch(() => {});
-  if (target > be - 0.15) return;                               // that radio has not arrived yet
-  const e = audio.currentTime - target;
-  if (s.force || Math.abs(e) > 0.35) {
-    if (s.force || wall() - s.seekAt > 1) { audio.currentTime = Math.max(bs + 0.05, target + 0.02); audio.playbackRate = 1; s.seekAt = wall(); s.force = false; }
-  } else audio.playbackRate = Math.abs(e) < 0.03 ? 1 : 1 - Math.max(-0.04, Math.min(0.04, e * 0.4));
+  const b = audio.buffered, t = audio.currentTime;
+  if (t !== s.lastT || b.end(b.length - 1) - t < 1) { s.lastT = t; s.movedAt = wall(); }
+  else if (wall() - s.movedAt > 4) { s.sb = null; chooseFallback(s); return; }   // has sound data but does not play: use Web Audio
+  const m = wall() + s.L - audio.currentTime;                   // measured delay
+  if (Math.abs(m - s.D) > 0.6 && wall() - s.seekAt > 2) s.D = m; // after a stall, show the true delay
 }
 const position = s => s.mode === 'mse' ? audio.currentTime : ctx.currentTime - s.offset;
 
@@ -468,14 +478,15 @@ function draw(s) {
 }
 const AUTO_MIN = 45;                 // seconds of saved radio needed before auto sync
 
-function hold(s) { s.held = true; s.release = null; s.heldMedia = position(s); if (s.mode === 'mse') audio.pause(); cut(s); }
-function resume(s) { s.D = Math.max(s.minD, Math.min(MAXD, wall() + s.L - s.heldMedia)); s.held = false; s.release = null; s.offset = NaN; s.force = true; }
+function hold(s) { s.movedAt = wall() + 1e9; s.held = true; s.release = null; s.heldMedia = position(s); if (s.mode === 'mse') audio.pause(); cut(s); }
+function resume(s) { s.movedAt = wall(); s.D = Math.max(s.minD, Math.min(MAXD, wall() + s.L - s.heldMedia)); s.held = false; s.release = null; s.offset = NaN; s.seekAt = wall(); if (s.mode === 'mse') audio.play().catch(() => {}); }
 // Set the delay. If the app has not saved enough radio yet, wait silently until it has.
 function setDelay(s, d) {
   d = Math.max(s.minD, Math.min(MAXD, d));
   const oldest = s.base * s.fd + s.P * s.fd + 0.3, pos = wall() + s.L - d;
-  if (pos < oldest) { s.held = true; s.release = d; s.heldMedia = oldest; if (s.mode === 'mse') audio.pause(); cut(s); }
-  else { s.D = d; s.held = false; s.release = null; s.force = true; }
+  s.seekAt = s.movedAt = wall();
+  if (pos < oldest) { s.held = true; s.release = d; s.heldMedia = oldest; if (s.mode === 'mse') { audio.pause(); seekTo(oldest); } cut(s); }
+  else { s.D = d; s.held = false; s.release = null; if (s.mode === 'mse') { seekTo(pos); audio.play().catch(() => {}); } }
 }
 
 function enable(on) { $('syncCard').hidden = !on; }
@@ -509,10 +520,10 @@ $('play').onclick = async () => {
   const url = $('station').value === 'custom' ? $('custom').value.trim() : $('station').value;
   if (!url) return;
   setup();
-  try { await ctx.resume(); } catch (e) {}
-  keepAwake();
   $('play').textContent = '⏹ Stop radio'; $('radioStatus').textContent = 'Connecting…';
-  start(url);
+  start(url);                                                   // starts the player inside this tap (iPhone needs that)
+  ctx.resume().catch(() => {});
+  keepAwake();
 };
 setInterval(tick, 60);
 
@@ -533,6 +544,28 @@ document.querySelectorAll('[data-n]').forEach(b => {
   b.addEventListener('contextmenu', e => e.preventDefault());
 });
 
+// ---- Test recording: microphone sound and the radio from the same time, in one WAV file ----
+let testFile = null;
+function keepTest(s, pcm, rate, info) {
+  if (pcm.length < rate * 5) return;
+  const a = Math.max(s.base, s.total - Math.ceil(240 / s.fd)), aac = join(s.frames.slice(a - s.base));
+  const meta = Object.assign({ v: 1, when: new Date().toISOString(), ua: navigator.userAgent, mode: s.mode, mime: s.mime, kind: s.kind,
+    micRate: rate, micSamples: pcm.length, radioFirstFrame: a, radioFirstTime: a * s.fd, frameSeconds: s.fd, L: s.L }, info);
+  const json = new TextEncoder().encode(JSON.stringify(meta)), pad = n => n + (n & 1);
+  const chunk = (id, bytes) => { const out = new Uint8Array(8 + pad(bytes.length)); out.set(chars(id)); new DataView(out.buffer).setUint32(4, bytes.length, true); out.set(bytes, 8); return out; };
+  const fmt = new DataView(new ArrayBuffer(16)); fmt.setUint16(0, 1, true); fmt.setUint16(2, 1, true); fmt.setUint32(4, rate, true); fmt.setUint32(8, rate * 2, true); fmt.setUint16(12, 2, true); fmt.setUint16(14, 16, true);
+  const body = join([chars('WAVE'), chunk('fmt ', new Uint8Array(fmt.buffer)), chunk('data', new Uint8Array(Int16Array.from(pcm).buffer)), chunk('json', json), chunk('aac ', aac)]);
+  const head = new Uint8Array(8); head.set(chars('RIFF')); new DataView(head.buffer).setUint32(4, body.length, true);
+  testFile = new File([head, body], 'sooner-sync-test.wav', { type: 'audio/wav' });
+  $('send').hidden = false; $('sendNote').hidden = false;
+}
+$('send').onclick = async () => {
+  if (!testFile) return;
+  try { if (navigator.canShare && navigator.canShare({ files: [testFile] })) { await navigator.share({ files: [testFile], title: 'Sooner Sync test recording' }); return; } }
+  catch (e) { if (e.name === 'AbortError') return; }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(testFile); a.download = testFile.name; document.body.appendChild(a); a.click(); a.remove();
+};
+
 // ---- Auto sync ----
 $('auto').onclick = async () => {
   const s = S; if (!s || busyAuto) return;
@@ -547,12 +580,14 @@ $('auto').onclick = async () => {
   master.gain.value = 0; audio.muted = true;                    // radio silent, so the phone hears only the TV
   const rate = ctx.sampleRate, mic = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(4096, 1, 1), feat = new Feat(rate);
   let micT0 = null, peak = 0, lvl = 0;
+  const DS = 16000, pcm = []; let acc = 0, cnt = 0, ph = 0;   // 16 kHz copy of the microphone, for the test recording
   node.onaudioprocess = ev => {
     const x = ev.inputBuffer.getChannelData(0);
     if (micT0 == null) micT0 = ctx.currentTime - x.length / rate;
     let q = 0; for (let i = 0; i < x.length; i++) q += x[i] * x[i];
     lvl = Math.sqrt(q / x.length); if (lvl > peak) peak = lvl;
     feat.push(x);
+    for (let i = 0; i < x.length; i++) { acc += x[i]; cnt++; ph += DS / rate; if (ph >= 1) { ph -= 1; pcm.push(Math.max(-32768, Math.min(32767, Math.round(acc / cnt * 32767)))); acc = 0; cnt = 0; } }
   };
   mic.connect(node); node.connect(sink);
   const MIN = 20, MAX = 45, hop = feat.hop / rate;
@@ -590,6 +625,8 @@ $('auto').onclick = async () => {
   $('micLvl').style.width = '0'; busyAuto = false;
   if (S !== s) return;
   const have = (s.total - s.base) * s.fd;
+  const dFound = found == null ? null : found - (ctx.currentTime - wall()) + s.L;
+  keepTest(s, pcm, DS, { micStartLive: micT0 - (ctx.currentTime - wall()) + s.L, ctxRate: rate, peak, delayBefore: curDelay(s), delayFound: dFound, match: shown && { best: shown.best, second: shown.second, z: shown.z } });
   if (peak < 1e-5) { say('The microphone gave no sound. Allow the microphone for this page, then try again.'); return; }
   if (found == null) {
     say(`Not sure${shown ? ` (match ${Math.round(Math.max(0, shown.best) * 100)}%)` : ''}. ` + (have < 150 ? 'Try again in one minute, during live play. Or use Pause.' : 'Try again during live play with the TV louder. Or use Pause.'));
