@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8"><title>wc test</title>
+<script>
+  // capture the AudioContext the module creates, to map context frames to wall clock
+  const RealAC = window.AudioContext;
+  window.AudioContext = function (o) { const c = new RealAC(o); window.__ctx = c; return c; };
+  window.AudioContext.prototype = RealAC.prototype;
+</script>
+<script src="/wc-player.js"></script>
+<script>
+  window.T = { states: [], taps: [], rec: false, clock: [] };
+  T.run = (o) => {
+    T.p = SoonerWC.create(Object.assign({ url: '/stream', onState: (st) => { T.last = st; T.states.push([performance.now(), st.status]); },
+      _tap: (c) => { if (T.rec) T.taps.push(c); } }, o));
+    T.p.start();
+    setInterval(() => { const c = window.__ctx; if (c) { const o = c.getOutputTimestamp(); if (o.performanceTime > 0) T.clock.push([o.contextTime, performance.timeOrigin + o.performanceTime]); } }, 500);
+  };
+  T.upload = async (name) => {
+    const taps = T.taps; T.taps = [];
+    const n = 4096, buf = new Float32Array(taps.length * n * 2);
+    taps.forEach((c, i) => { buf.set(c.l, i * 2 * n); buf.set(c.r, i * 2 * n + n); });
+    const meta = { sr: window.__ctx.sampleRate, chunks: taps.map(c => [c.seg, c.pos, c.frame, c.media]), clock: T.clock.slice(-40) };
+    for (let i = 0; i < buf.length; i += 1 << 19) {   // small posts so the main thread is never blocked for long
+      await fetch('/' + name + '.bin?append=' + (i > 0 ? 1 : 0), { method: 'POST', body: buf.subarray(i, i + (1 << 19)) });
+      await new Promise(r => setTimeout(r, 30));
+    }
+    await fetch('/' + name + '.json', { method: 'POST', body: JSON.stringify(meta) });
+    return taps.length;
+  };
+</script>

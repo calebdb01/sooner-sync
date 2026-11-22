@@ -9,6 +9,8 @@
  * Timing: delay = liveMedia(now) - mediaBeingHeard, where liveMedia(t) = t + L,
  * L = max over time of (mediaSecondsReceived - t), and mediaBeingHeard comes from
  * the sample count the worklet reports as consumed (never from timers).
+ * Test-only options: create({ _sampleRate: 48000 }) forces the AudioContext rate;
+ * create({ _tap: fn }) makes the worklet post back every output block it plays.
  */
 (function (global) {
   'use strict';
@@ -42,7 +44,7 @@
         this.seg = 0; this.segStart = 0; this.startFrame = 0;
         this.playing = false; this.pauseGain = 0;
         this.flowing = false; this.since = 0;    // input samples since the last fade-in began
-        this.underruns = 0; this.dropped = 0; this.fresh = false;
+        this.underruns = 0; this.dropped = 0; this.fresh = false; this.lastOut = 0;
         this.tap = o.tap ? { l: new Float32Array(4096), r: new Float32Array(4096), n: 0, pos: 0, seg: 0 } : null;
         this.nextReport = 0;
         this.port.onmessage = (e) => this.onMsg(e.data);
@@ -74,7 +76,7 @@
       }
       process(inputs, outputs) {
         var oL = outputs[0][0], oR = outputs[0][1] || outputs[0][0], n = oL.length;
-        var tapPos = this.r - this.segStart, tapSeg = this.seg;
+        var tapPos = this.r - this.segStart, tapSeg = this.seg, r0 = this.r, lastJ = 0;
         for (var j = 0; j < n; j++) {
           var avail = this.w - this.r, inNew = this.r >= this.segStart;
           if (this.playing ? false : this.pauseGain <= 0) { oL[j] = oR[j] = 0; continue; }
@@ -93,13 +95,14 @@
           var g = Math.min(1, this.since / this.fade) * Math.min(1, avail / this.fade) * this.pauseGain;
           oL[j] = (this.L[a] + (this.L[b] - this.L[a]) * f) * g;
           oR[j] = (this.R[a] + (this.R[b] - this.R[a]) * f) * g;
-          this.r += this.step; this.since += this.step;
+          this.r += this.step; this.since += this.step; lastJ = j;
           if (!this.playing) this.pauseGain = Math.max(0, this.pauseGain - this.step / this.fade);
         }
+        if (this.r !== r0) this.lastOut = currentTime + (lastJ + 1) / sampleRate;   // end of the audio rendered so far
         if (this.tap) this.tapPush(oL, oR, tapPos, tapSeg);
         if (currentFrame >= this.nextReport) {
           this.nextReport = currentFrame + sampleRate / 5;
-          this.port.postMessage({ t: 'stat', seg: this.seg, ct: currentTime + n / sampleRate,
+          this.port.postMessage({ t: 'stat', seg: this.seg, lastOut: this.lastOut,
             consumed: Math.max(0, this.r - this.segStart), fill: Math.max(0, this.w - Math.max(this.r, this.segStart)),
             flowing: this.flowing && this.playing, underruns: this.underruns, dropped: this.dropped });
         }
@@ -153,7 +156,7 @@
       target: Math.max(MIN_DELAY, +opts.delay || MIN_DELAY), needSeek: true, corrections: 0,
       dec: null, modes: [], mode: '', verified: false, decodeErrors: 0, tsGaps: 0,
       seg: 0, segMedia: 0, feed: 0, feedStart: 0, expect: 0, skip: 0, fed: 0, outputs: 0, posted: 0, segPlayed: false,
-      w: { seg: 0, consumed: 0, fill: 0, flowing: false, underruns: 0, dropped: 0, ct: 0 },
+      w: { seg: 0, consumed: 0, fill: 0, flowing: false, underruns: 0, dropped: 0, lastOut: 0 },
       delayEst: null
     };
     var ctx = null, node = null, gain = null, abort = null, timer = null, startPromise = null;
@@ -315,14 +318,15 @@
     // Start a new worklet segment (silent until it receives audio).
     function flush(at) {
       s.seg++; s.segPlayed = false; s.posted = 0; s.fed = 0; s.outputs = 0;
+      s.feed = s.feedStart = -1;                                        // rejects any output still in the decoder
       s.w.consumed = 0; s.w.fill = 0; s.w.flowing = false; s.delayEst = null;
       if (node) node.port.postMessage({ t: 'seek', seg: s.seg, at: at || 0 });
     }
     // Schedule the first audible sample at context time T so the delay is exact from the start.
     function seek(delay) {
       var T = ctx.currentTime + START_MARGIN * (1 + s.corrections);
-      var out = (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
-      var m = nowS() + (T - ctx.currentTime) + out + s.L - delay;    // media time to render at T
+      // media to render at T: T becomes audible at wall time now + (T - audibleCtxTime())
+      var m = nowS() + (T - audibleCtxTime()) + s.L - delay;
       var samp = Math.round(m * s.rate), k = Math.floor(samp / FRAME);
       flush(T);
       s.segMedia = samp / s.rate; segMediaBySeg[s.seg] = s.segMedia;
@@ -365,10 +369,22 @@
       if (raw !== null) s.delayEst = s.delayEst === null || Math.abs(raw - s.delayEst) > 0.05 ? raw : s.delayEst + 0.3 * (raw - s.delayEst);
       pump();
     }
+    // Context time of the sample reaching the speaker now. getOutputTimestamp() includes the output
+    // latency and is not quantised like ctx.currentTime (which jumps once per audio callback).
+    function audibleCtxTime() {
+      try {
+        var o = ctx.getOutputTimestamp && ctx.getOutputTimestamp();
+        if (o && o.performanceTime > 0) return o.contextTime + nowS() - o.performanceTime / 1000;
+      } catch (e) { /* fall through */ }
+      return ctx.currentTime - (ctx.outputLatency || 0) - (ctx.baseLatency || 0);
+    }
     function rawDelay() {
       if (!s.segPlayed || !ctx || s.w.consumed <= 0) return null;
-      var rendered = s.segMedia + s.w.consumed / s.rate + (s.w.flowing ? ctx.currentTime - s.w.ct : 0);
-      return live() - rendered + (ctx.outputLatency || 0) + (ctx.baseLatency || 0);
+      // consumed samples end at context time lastOut; that point is heard once the output latency has passed.
+      // While flowing this extrapolates; while stopped (pause, underrun) the heard position stays put.
+      var ahead = audibleCtxTime() - s.w.lastOut;
+      var heard = s.segMedia + s.w.consumed / s.rate + (s.w.flowing ? ahead : Math.min(0, ahead));
+      return live() - heard;
     }
     function currentDelay() { return s.delayEst !== null && !s.needSeek ? s.delayEst : s.target; }
 
@@ -414,7 +430,9 @@
       // Synchronous part: must run inside the tap handler for iOS to allow audio.
       try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* optional API */ }
       var AC = global.AudioContext || global.webkitAudioContext;
-      try { ctx = new AC({ sampleRate: opts._sampleRate || 44100, latencyHint: 'playback' }); } catch (e) { ctx = new AC(); }
+      try {
+        try { ctx = new AC({ sampleRate: opts._sampleRate || 44100, latencyHint: 'playback' }); } catch (e) { ctx = new AC(); }
+      } catch (e) { fail(e, true); return (startPromise = Promise.resolve()); }
       resumeCtx();
       try {                                                             // silent one-sample buffer: unlocks old iOS output
         var src = ctx.createBufferSource(); src.buffer = ctx.createBuffer(1, 1, ctx.sampleRate); src.connect(ctx.destination); src.start(0);
@@ -488,8 +506,7 @@
         queueSeconds: s.rate ? s.w.fill / s.rate : 0, droppedMessages: s.w.dropped, state: s.status, lastError: s.lastError,
         userAgent: navigator.userAgent, decoderMode: s.mode, contextState: ctx ? ctx.state : 'none',
         outputLatency: ctx ? (ctx.outputLatency || 0) + (ctx.baseLatency || 0) : 0, reconnects: s.reconnects,
-        resyncBytes: s.resyncBytes, timestampGaps: s.tsGaps, liveOffset: s.L,
-        _segMedia: s.segMedia, _seg: s.seg
+        resyncBytes: s.resyncBytes, timestampGaps: s.tsGaps, liveOffset: s.L
       };
     }
     return { start: start, stop: stop, pause: pause, resume: resume, setDelay: setDelay, getDelay: getDelay, setMuted: setMuted, stats: stats };
