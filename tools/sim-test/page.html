@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Page test</title>
+<style>html,body{margin:0;height:100%;background:#140808}iframe{border:0;width:100%;height:100%}</style></head>
+<body><iframe id="f" src="/index.html"></iframe>
+<script>
+  // Watches the real page in the frame and posts its player stats and log to the local server.
+  var RUN = new URLSearchParams(location.search).get('run') || ('p' + Date.now()), sent = 0;
+  function post(o) { o.run = RUN; o.t = +(performance.now() / 1000).toFixed(3); fetch('/report', { method: 'POST', body: JSON.stringify(o), keepalive: true }).catch(function () {}); }
+  post({ k: 'load', ua: navigator.userAgent });
+  setInterval(function () {
+    try {
+      var w = document.getElementById('f').contentWindow, S = w.__sooner; if (!S) return;
+      var log = S.log; if (log.length < sent) sent = 0;
+      for (; sent < log.length; sent++) post({ k: 'log', line: log[sent] });
+      var d = w.document;
+      if (S.player) { var s = S.player.stats(); s.delay = S.player.getDelay(); post({ k: 'stats', s: s, ui: { delay: d.getElementById('delay').textContent, step: d.getElementById('step').textContent, status: d.getElementById('status').textContent } }); }
+      else post({ k: 'ui', status: d.getElementById('status').textContent });
+    } catch (e) { post({ k: 'pageerror', msg: String(e) }); }
+  }, 1000);
+</script></body></html>

@@ -2,644 +2,296 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#140808">
 <title>Sooner Sync</title>
 <style>
-:root{--crimson:#841617;--cream:#fdf9d8;--bg:#140808;--card:#241010;--text:#fdf9d8;--muted:#c9b9a0;--ok:#6fcf7a}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:16px;max-width:560px;margin:auto}
-h1{margin:4px 0 2px;font-size:28px;color:var(--cream)}
+:root{--crimson:#841617;--cream:#fdf9d8;--bg:#140808;--card:#241010;--line:#3a1a1a;--text:#fdf9d8;--muted:#c9b9a0;--ok:#6fcf7a;--warn:#e8b04a}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{background:var(--bg)}
+body{margin:0 auto;background:var(--bg);color:var(--text);font:16px/1.4 -apple-system,system-ui,sans-serif;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom));max-width:520px}
+h1{margin:4px 0 2px;font-size:26px;color:var(--cream)}
 h1 span{background:var(--crimson);padding:0 8px;border-radius:6px}
-.sub{color:var(--muted);margin:0 0 16px}
-.card{background:var(--card);border:1px solid #3a1a1a;border-radius:14px;padding:16px;margin-bottom:14px}
-.card h2{margin:0 0 8px;font-size:17px}
-button{font:inherit;border:0;border-radius:10px;padding:12px 10px;background:#3a1a1a;color:var(--text);cursor:pointer;touch-action:manipulation}
-button.big{width:100%;padding:16px;font-size:18px;font-weight:700;background:var(--crimson)}
-button.on{background:#b8860b}
-button:disabled{opacity:.45}
+.sub{color:var(--muted);margin:0 0 14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+button{font:inherit;border:0;border-radius:12px;padding:14px 8px;background:#3a1a1a;color:var(--text);cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+button:active{filter:brightness(1.3)}
+button:disabled{opacity:.4}
+button.big{width:100%;padding:18px;font-size:20px;font-weight:700;background:var(--crimson)}
+button.big.resume{background:#2f6b36}
+button.link{background:none;padding:4px 0;color:var(--muted);text-decoration:underline}
 .row{display:flex;gap:8px}
-.row button{flex:1}
-select,input{width:100%;font:inherit;padding:10px;border-radius:10px;border:1px solid #4a2a2a;background:#1a0b0b;color:var(--text);margin-top:6px}
-.delay{font-size:44px;font-weight:800;text-align:center;margin:2px 0;font-variant-numeric:tabular-nums}
-.status{color:var(--muted);text-align:center;min-height:2.8em}
-.meter{height:8px;background:#1a0b0b;border-radius:4px;overflow:hidden;margin-top:8px}
-.meter div{height:100%;width:0;background:var(--ok);transition:width .1s}
-small,li{color:var(--muted)}
-.gap{height:10px}
-summary{cursor:pointer;font-weight:700}
-ul{padding-left:20px;margin:8px 0 0}
-li{margin-bottom:6px}
+.row button{flex:1;min-width:0}
+input{width:100%;font:inherit;font-size:16px;padding:12px;border-radius:10px;border:1px solid #4a2a2a;background:#1a0b0b;color:var(--text)}
+.label{color:var(--muted);text-align:center;font-size:14px}
+.delay{font-size:56px;font-weight:800;text-align:center;line-height:1.1;margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.delay small{font-size:24px;color:var(--muted);font-weight:600}
+.step{text-align:center;font-size:18px;min-height:2.8em;margin:6px 0 12px}
+.status{color:var(--muted);text-align:center;font-size:14px;min-height:1.4em;margin-top:8px}
+.status.bad{color:var(--warn)}
+.note{color:var(--muted);font-size:14px;margin:10px 0 0}
+.station{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.station b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ul.list{list-style:none;padding:0;margin:8px 0 0}
+ul.list li{display:flex;gap:8px;align-items:center;border-top:1px solid var(--line);padding:8px 0}
+ul.list li .nm{flex:1;min-width:0}
+ul.list li .nm small{display:block;color:var(--muted)}
+ul.list li button{padding:10px 12px}
+h2{font-size:16px;margin:14px 0 6px}
+h2:first-child{margin-top:0}
+details summary{cursor:pointer;font-weight:700}
+details li{color:var(--muted);margin-bottom:6px}
+.hidden{display:none!important}
 </style>
 </head>
 <body>
 <h1><span>Sooner</span> Sync</h1>
-<p class="sub">Hear the Sooner radio call, lined up with your TV.</p>
+<p class="sub">Hear the radio call, lined up with your TV.</p>
 
-<div class="card">
+<div class="card" id="mainCard">
+  <div class="station"><span>📻</span><b id="stName"></b><button class="link" id="change">Change</button></div>
   <button class="big" id="play">▶ Play radio</button>
-  <div class="status" id="radioStatus" style="min-height:1.4em;margin-top:8px"></div>
-  <details>
-    <summary>Change station</summary>
-    <select id="station">
-      <option value="https://das-edge60-sa48-futuri-chi03.cdnstream.com/11317_96k.aac">107.7 The Franchise (OKC, Sooner flagship)</option>
-      <option value="custom">Other stream link…</option>
-    </select>
-    <input id="custom" placeholder="Paste a direct AAC or MP3 stream link (https://…)" style="display:none">
-    <p><small>Some games are blocked on the web stream for rights reasons. If you hear normal shows and not the game, use a different stream link.</small></p>
-  </details>
+  <div class="status" id="status"></div>
 </div>
 
-<div class="card" id="syncCard" hidden>
-  <div class="status" style="min-height:0">Radio delay</div>
-  <div class="delay" id="delayTxt">Live</div>
-  <div class="status" id="status"></div>
-  <div class="gap"></div>
+<div class="card hidden" id="pickCard">
+  <h2>Stations</h2>
+  <ul class="list" id="favList"></ul>
+  <h2>Search</h2>
+  <div class="row"><input id="q" type="search" placeholder="Station name or city" enterkeyhint="search"><button id="go" style="flex:0 0 auto;padding:12px 16px">Search</button></div>
+  <div class="status" id="searchMsg" style="text-align:left"></div>
+  <ul class="list" id="results"></ul>
+  <h2>Paste a stream link</h2>
+  <div class="row"><input id="link" type="url" placeholder="https://…" inputmode="url"><button id="useLink" style="flex:0 0 auto;padding:12px 16px">Use</button></div>
+  <p class="note">The directory does not list every station, and many stations block web players. This page plays AAC streams only. Some games are not on the web stream because of broadcast rights.</p>
+  <button class="link" id="closePick">Close</button>
+</div>
+
+<div class="card hidden" id="syncCard">
+  <div class="label">Radio delay</div>
+  <div class="delay" id="delay">–</div>
+  <div class="step" id="step"></div>
   <button class="big" id="hold">⏸ Pause radio</button>
-  <div class="gap"></div>
+  <div style="height:12px"></div>
   <div class="row">
-    <button data-n="-0.25">◀ Radio sooner</button>
-    <button data-n="0.25">Radio later ▶</button>
+    <button data-n="-5">−5 s</button>
+    <button data-n="-0.25">◀ Sooner</button>
+    <button data-n="0.25">Later ▶</button>
+    <button data-n="5">+5 s</button>
   </div>
-  <p><small>Small error? Tap Sooner or Later. Hold a button to move faster.</small></p>
-  <div class="row">
-    <button id="auto">🎤 Auto sync</button>
-    <button id="live">Start over</button>
-  </div>
-  <div class="meter"><div id="micLvl"></div></div>
-  <div class="gap"></div>
-  <button id="send" hidden style="width:100%">📤 Send test recording</button>
-  <p id="sendNote" hidden><small>This saves what the phone heard from the TV, and the radio from the same time. Send the file to the developer to make auto sync better.</small></p>
+  <p class="note">Sooner makes the radio play earlier. Later makes it play later. Hold a button to move faster.</p>
+  <div style="height:8px"></div>
+  <div class="row"><button id="live">Start over</button><button id="stop">Stop</button></div>
+  <p class="note">If the radio is behind the TV, pause the TV for a few seconds, then line them up again.</p>
 </div>
 
 <div class="card">
   <details>
     <summary>How to use</summary>
     <ul>
-      <li><b>Manual sync:</b> Tap Pause when the radio calls the snap. Tap Resume when the TV shows that snap. Then use Sooner or Later for small errors.</li>
-      <li><b>Auto sync:</b> The radio goes silent for 20 to 45 seconds while the phone listens to the TV.</li>
-      <li>Start auto sync during live play. Do not start it during ads, replays or halftime.</li>
-      <li>Turn the TV volume up. Hold the phone 1 to 3 feet from the TV speaker. Keep the room quiet.</li>
-      <li>Do not use Bluetooth earphones during auto sync.</li>
-      <li>If the radio is behind the TV, pause the TV for some seconds. Then sync again.</li>
+      <li>Tap Play. The radio starts 5 seconds behind live.</li>
+      <li>Tap Pause when the radio calls the snap.</li>
+      <li>Tap Resume when the TV shows that same snap.</li>
+      <li>Use Sooner or Later to fix a small error. Check again on the next play.</li>
+      <li>Turn the TV sound down. Keep this page open.</li>
     </ul>
   </details>
+  <div style="height:10px"></div>
+  <button id="report" style="width:100%">Copy report</button>
+  <div class="status" id="reportMsg"></div>
 </div>
 
-<audio id="audio" playsinline></audio>
-
+<script src="wc-player.js"></script>
+<script src="stations.js"></script>
 <script>
-//<dsp>
-// ---- Sound matching (no page access in this block, so it can be tested alone) ----
-function fft(re, im) {
-  const n = re.length;
-  for (let i = 1, j = 0; i < n; i++) {
-    let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit;
-    if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var ST = window.SoonerStations, MIN = 4, START = 5, MAX = 290;   // below about 3 s the sound broke up in tests
+  var player = null, station = null, last = null, log = [], lock = null;
+  var pending = null, commitTimer = null, phase = 'idle';   // phase: idle | play | paused | resumed
+
+  function note(t) { log.push(new Date().toISOString().slice(11, 19) + ' ' + t); if (log.length > 60) log.shift(); }
+  window.addEventListener('error', function (e) { note('page error: ' + e.message); });
+  window.addEventListener('unhandledrejection', function (e) { note('promise error: ' + e.reason); });
+
+  // ---------- station ----------
+  function loadStation() {
+    try { var s = JSON.parse(localStorage.getItem('soonerSync.station') || 'null'); if (s && s.url) return s; } catch (e) { /* ignore */ }
+    return ST.builtin[0];
   }
-  for (let len = 2; len <= n; len <<= 1) {
-    const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
-    for (let i = 0; i < n; i += len) {
-      let cr = 1, ci = 0;
-      for (let k = 0; k < len / 2; k++) {
-        const a = i + k, b = a + len / 2;
-        const xr = re[b] * cr - im[b] * ci, xi = re[b] * ci + im[b] * cr;
-        re[b] = re[a] - xr; im[b] = im[a] - xi; re[a] += xr; im[a] += xi;
-        const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
-      }
-    }
+  function setStation(s) {
+    station = s; $('stName').textContent = s.name;
+    try { localStorage.setItem('soonerSync.station', JSON.stringify(s)); } catch (e) { /* ignore */ }
   }
-}
-const FPS = 20;                                       // sound measurements per second
-const EDGES = [300, 600, 1200, 2400, 4800, 9000];     // band edges in Hz
-// Turns sound into band energy, FPS times per second. Used for the radio and for the microphone.
-class Feat {
-  constructor(rate) {
-    this.rate = rate; this.win = 2048; this.hop = Math.round(rate / FPS);
-    this.pend = new Float32Array(0); this.skip = 0;
-    this.E = EDGES.slice(1).map(() => []); this.base = 0;   // E[b][i] is measurement number base + i
-    this.re = new Float32Array(this.win); this.im = new Float32Array(this.win);
-    this.w = Float32Array.from({ length: this.win }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / this.win));
-    this.bins = EDGES.map(f => Math.min(this.win / 2, Math.round(f * this.win / rate)));
-  }
-  get n() { return this.base + this.E[0].length; }
-  push(x) {
-    const p = new Float32Array(this.pend.length + x.length); p.set(this.pend); p.set(x, this.pend.length);
-    let i = this.skip;
-    for (; i + this.win <= p.length; i += this.hop) {
-      for (let k = 0; k < this.win; k++) { this.re[k] = p[i + k] * this.w[k]; this.im[k] = 0; }
-      fft(this.re, this.im);
-      for (let b = 0; b < this.E.length; b++) {
-        let s = 0; for (let k = this.bins[b]; k < this.bins[b + 1]; k++) s += this.re[k] * this.re[k] + this.im[k] * this.im[k];
-        this.E[b].push(s);
-      }
-    }
-    if (i >= p.length) { this.skip = i - p.length; this.pend = new Float32Array(0); }
-    else { this.skip = 0; this.pend = p.slice(i); }
-  }
-  trim(max) { const k = this.E[0].length - max; if (k > 0) { this.E.forEach(e => e.splice(0, k)); this.base += k; } }
-}
-// Background level of one band: the quiet level between words (crowd, band, whistles), with slow drift removed.
-function floorTrack(e) {
-  const n = e.length, lg = new Float32Array(n), mn = new Float32Array(n), out = new Float32Array(n);
-  const sorted = Float64Array.from(e).sort(), eps = sorted[n >> 1] * 1e-3 + 1e-30;
-  for (let i = 0; i < n; i++) lg[i] = Math.log(e[i] + eps);
-  const W = 6, A = 4, H = 30;
-  for (let i = 0; i < n; i++) { let m = Infinity; for (let j = Math.max(0, i - W); j <= Math.min(n - 1, i + W); j++) if (lg[j] < m) m = lg[j]; mn[i] = m; }
-  const pre = new Float64Array(n + 1); for (let i = 0; i < n; i++) pre[i + 1] = pre[i] + mn[i];
-  const avg = (i, h) => { const a = Math.max(0, i - h), b = Math.min(n, i + h + 1); return (pre[b] - pre[a]) / (b - a); };
-  for (let i = 0; i < n; i++) out[i] = avg(i, A) - avg(i, H);
-  return out;
-}
-// Find where the microphone sound (mic bands, items m0..m0+n) fits in the radio sound.
-// Returns the best radio start index and how sure the match is.
-function locate(micE, m0, n, radE) {
-  const R = radE[0].length, L = R - n + 1;
-  if (L < 1) return null;
-  const score = new Float32Array(L);
-  for (let b = 0; b < micE.length; b++) {
-    const t = floorTrack(micE[b]).slice(m0, m0 + n), x = floorTrack(radE[b]);
-    let m = 0; for (const v of t) m += v; m /= n;
-    let q = 0; for (let i = 0; i < n; i++) { t[i] -= m; q += t[i] * t[i]; }
-    q = Math.sqrt(q) || 1;
-    const p1 = new Float64Array(R + 1), p2 = new Float64Array(R + 1);
-    for (let i = 0; i < R; i++) { p1[i + 1] = p1[i] + x[i]; p2[i + 1] = p2[i] + x[i] * x[i]; }
-    for (let s = 0; s < L; s++) {
-      let c = 0; for (let i = 0; i < n; i++) c += t[i] * x[s + i];
-      const sum = p1[s + n] - p1[s], den = Math.sqrt(Math.max(1e-12, p2[s + n] - p2[s] - sum * sum / n));
-      score[s] += c / (q * den) / micE.length;
-    }
-  }
-  let best = -2, at = 0, mean = 0;
-  for (let s = 0; s < L; s++) { mean += score[s]; if (score[s] > best) { best = score[s]; at = s; } }
-  mean /= L;
-  let sd = 0, second = -2;
-  for (let s = 0; s < L; s++) { sd += (score[s] - mean) ** 2; if (Math.abs(s - at) > 3 * FPS && score[s] > second) second = score[s]; }
-  sd = Math.sqrt(sd / L) || 1;
-  return { at, best, second, z: (best - mean) / sd, lags: L };
-}
-// A match is good when it is strong and clearly better than every other position.
-function sure(r) { return r && r.lags > 5 * FPS && r.best > 0.45 && r.z > 4 && r.best - Math.max(0, r.second) > 0.18; }
-//</dsp>
+  setStation(loadStation());
 
-// ---- Stream reading ----
-const AAC_SR = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
-const MP3_BR = { 3: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], 2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160] };
-const MP3_SR = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
-// Reads one AAC (ADTS) or MP3 frame header. Returns null if this is not a frame start.
-function header(b, i) {
-  if (b[i] !== 0xFF || (b[i + 1] & 0xE0) !== 0xE0) return null;
-  const layer = (b[i + 1] >> 1) & 3;
-  if (layer === 0 && (b[i + 1] & 0xF0) === 0xF0) {
-    const sr = AAC_SR[(b[i + 2] >> 2) & 15], len = ((b[i + 3] & 3) << 11) | (b[i + 4] << 3) | (b[i + 5] >> 5);
-    if (!sr || len < 8) return null;
-    return { kind: 'aac', sr, len, dur: 1024 * ((b[i + 6] & 3) + 1) / sr, obj: (b[i + 2] >> 6) + 1, sfi: (b[i + 2] >> 2) & 15, ch: ((b[i + 2] & 1) << 2) | (b[i + 3] >> 6) || 2 };
-  }
-  if (layer === 1) {
-    const ver = (b[i + 1] >> 3) & 3, v = ver === 3 ? 3 : 2;
-    if (ver === 1) return null;
-    const br = MP3_BR[v][b[i + 2] >> 4], sr = MP3_SR[ver][(b[i + 2] >> 2) & 3], pad = (b[i + 2] >> 1) & 1;
-    if (!br || !sr) return null;
-    return { kind: 'mp3', sr, len: Math.floor((v === 3 ? 144000 : 72000) * br / sr) + pad, dur: (v === 3 ? 1152 : 576) / sr };
-  }
-  return null;
-}
-
-// ---- AAC frames to MP4 pieces, for the browser's own gapless player ----
-const u32 = n => [n >>> 24, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
-const chars = t => [...t].map(c => c.charCodeAt(0));
-const Z = n => new Array(n).fill(0);
-function join(parts) { let n = 0; for (const p of parts) n += p.length; const out = new Uint8Array(n); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; } return out; }
-function box(type, ...parts) { let n = 8; for (const p of parts) n += p.length; return join([u32(n), chars(type), ...parts]); }
-function mp4Init(h) {
-  const M = [0, 1, 0, 0, ...Z(12), 0, 1, 0, 0, ...Z(12), 0x40, 0, 0, 0];
-  const cfg = [(h.obj << 3) | (h.sfi >> 1), ((h.sfi & 1) << 7) | (h.ch << 3)];
-  const esds = box('esds', [0, 0, 0, 0, 3, 23 + cfg.length, 0, 1, 0, 4, 15 + cfg.length, 0x40, 0x15, 0, 0, 0, ...Z(8), 5, cfg.length, ...cfg, 6, 1, 2]);
-  const mp4a = box('mp4a', [...Z(6), 0, 1, ...Z(8), 0, h.ch, 0, 16, 0, 0, 0, 0, (h.sr >> 8) & 255, h.sr & 255, 0, 0], esds);
-  const stbl = box('stbl', box('stsd', [0, 0, 0, 0, 0, 0, 0, 1], mp4a), box('stts', Z(8)), box('stsc', Z(8)), box('stsz', Z(12)), box('stco', Z(8)));
-  const minf = box('minf', box('smhd', Z(8)), box('dinf', box('dref', [0, 0, 0, 0, 0, 0, 0, 1], box('url ', [0, 0, 0, 1]))), stbl);
-  const mdia = box('mdia', box('mdhd', [...Z(12), ...u32(h.sr), ...Z(4), 0x55, 0xc4, 0, 0]), box('hdlr', [...Z(8), ...chars('soun'), ...Z(12), ...chars('Sound'), 0]), minf);
-  const trak = box('trak', box('tkhd', [0, 0, 0, 7, ...Z(8), 0, 0, 0, 1, ...Z(16), 0, 0, 0, 0, 1, 0, 0, 0, ...M, ...Z(8)]), mdia);
-  const moov = box('moov', box('mvhd', [...Z(12), ...u32(h.sr), ...Z(4), 0, 1, 0, 0, 1, 0, ...Z(10), ...M, ...Z(24), 0, 0, 0, 2]), trak, box('mvex', box('trex', [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, ...Z(12)])));
-  return join([box('ftyp', [...chars('iso5'), 0, 0, 0, 1, ...chars('iso5'), ...chars('iso6'), ...chars('mp41')]), moov]);
-}
-function mp4Seg(frames, first, spf, seq) {
-  const raw = frames.map(f => f.subarray(f[1] & 1 ? 7 : 9));               // remove the ADTS header
-  const trun = [0, 0, 2, 1, ...u32(raw.length), 0, 0, 0, 0]; for (const f of raw) trun.push(...u32(f.length));
-  const t = first * spf;
-  const traf = box('traf', box('tfhd', [0, 2, 0, 8, 0, 0, 0, 1, ...u32(spf)]), box('tfdt', [1, 0, 0, 0, ...u32(Math.floor(t / 4294967296)), ...u32(t >>> 0)]), box('trun', trun));
-  const moof = box('moof', box('mfhd', [0, 0, 0, 0, ...u32(seq)]), traf);
-  moof.set(u32(moof.length + 8), moof.length - trun.length + 8);            // where the sound data starts
-  return join([moof, box('mdat', ...raw)]);
-}
-const MS = window.ManagedMediaSource || window.MediaSource;
-const FORCE = new URLSearchParams(location.search).get('mode');             // for tests: mp4, raw or wa
-function pickMime(h) {
-  if (!MS || FORCE === 'wa') return null;
-  const ok = m => { try { return MS.isTypeSupported(m); } catch (e) { return false; } };
-  if (h.kind === 'mp3') return ok('audio/mpeg') ? 'audio/mpeg' : null;
-  const mp4 = `audio/mp4; codecs="mp4a.40.${h.obj}"`;
-  if (FORCE !== 'raw' && ok(mp4)) return mp4;
-  return ok('audio/aac') ? 'audio/aac' : null;
-}
-
-const $ = id => document.getElementById(id);
-const wall = () => performance.now() / 1000;
-const HIST = 300, MAXD = 280;        // seconds of radio kept, largest delay
-const XF = 0.004;                    // crossfade between pieces, seconds
-let ctx, master, sink, S = null, lock = null, busyAuto = false;
-const audio = $('audio');
-const GUIDE = 'Radio ahead of the TV? Tap Pause when the radio calls the snap.';
-
-$('station').onchange = () => $('custom').style.display = $('station').value === 'custom' ? 'block' : 'none';
-const say = t => $('status').textContent = t;
-
-function setup() {
-  if (ctx) return;
-  ctx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
-  master = ctx.createGain(); master.connect(ctx.destination);
-  sink = ctx.createGain(); sink.gain.value = 0; sink.connect(ctx.destination);
-  session('playback');
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && S) { ctx.resume(); keepAwake(); } });
-}
-// iPhone: play even when the ring switch is on silent, where the browser allows this.
-function session(type) { try { if (navigator.audioSession) navigator.audioSession.type = type; } catch (e) {} }
-async function keepAwake() { try { if (navigator.wakeLock && !document.hidden) lock = await navigator.wakeLock.request('screen'); } catch (e) {} }
-
-function newSession() {
-  return { ac: new AbortController(), frames: [], base: 0, total: 0, kind: null, fd: 0, N: 0, P: 0, Q: 0, dur: 0,
-    chunks: new Map(), feat: new Feat(ctx.sampleRate), featT0: null, aNext: 0, busy: false, bad: 0, ok: 0,
-    L: -Infinity, D: 0, minD: 1, started: false, held: false, heldMedia: 0, release: null,
-    offset: NaN, next: 0, under: false, sources: new Set(), t0: wall(),
-    Lt: wall(), lastT: -1, movedAt: wall(), mode: null, hdr: null, ms: null, sb: null, mime: null, appended: 0, seq: 1, force: true, seekAt: 0 };
-}
-
-async function read(url, s) {
-  const res = await fetch(url, { signal: s.ac.signal, cache: 'no-store' });
-  if (!res.ok) throw new Error('the station answered with error ' + res.status);
-  const rd = res.body.getReader();
-  let buf = new Uint8Array(0), seen = 0;
-  for (;;) {
-    const { value, done } = await rd.read();
-    if (done) throw new Error('the stream ended');
-    seen += value.length;
-    const b = new Uint8Array(buf.length + value.length); b.set(buf); b.set(value, buf.length);
-    let i = 0;
-    while (i + 8 < b.length) {
-      const h = header(b, i);
-      if (!h || (s.kind && (h.kind !== s.kind || h.sr !== s.sr))) { i++; continue; }
-      if (i + h.len + 8 > b.length) break;                      // wait for the next frame start
-      const h2 = header(b, i + h.len);
-      if (!h2 || h2.kind !== h.kind || h2.sr !== h.sr) { i++; continue; }
-      if (!s.kind) {
-        s.kind = h.kind; s.sr = h.sr; s.fd = h.dur; s.hdr = h;
-        s.N = Math.max(1, Math.round(0.5 / s.fd)); s.P = Math.ceil(0.25 / s.fd); s.Q = Math.ceil(0.12 / s.fd);
-        s.dur = s.N * s.fd; s.minD = s.dur + s.Q * s.fd + 0.8;
-        chooseMode(s);
-      }
-      s.frames.push(b.slice(i, i + h.len)); s.total++; i += h.len;
-    }
-    buf = b.slice(i);
-    if (!s.total && seen > 300000) throw new Error('this link is not a direct AAC or MP3 stream');
-    if (s.total) arrived(s);
-  }
-}
-
-// Use the browser's own player when it can take the stream (smooth sound). If not, play with Web Audio.
-async function chooseMode(s) {
-  s.mime = s.ms ? pickMime(s.hdr) : null;
-  if (s.mime) {
-    const opened = await Promise.race([s.msOpen.then(() => true), new Promise(r => setTimeout(() => r(false), 3000))]);
-    if (S !== s) return;
-    if (opened) try {
-      s.sb = s.ms.addSourceBuffer(s.mime);
-      s.sb.addEventListener('updateend', () => pump(s));
-      const fail = () => { if (S === s && s.mode === 'mse') { s.sb = null; chooseFallback(s); s.offset = NaN; } };
-      s.sb.addEventListener('error', fail); audio.onerror = fail;   // player refused the stream: use Web Audio
-      s.mode = 'mse'; s.minD = 2.5;
-      pump(s); return;
-    } catch (e) {}
-  }
-  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {}
-  s.mode = 'wa';
-}
-function attach(s) {
-  s.ms = null;
-  if (!MS || FORCE === 'wa') return;
-  try {
-    const ms = new MS();
-    s.msOpen = new Promise(ok => ms.addEventListener('sourceopen', ok, { once: true }));
-    audio.disableRemotePlayback = true;                         // needed by iPhone for this kind of player
-    audio.src = URL.createObjectURL(ms);
-    audio.muted = false; audio.playbackRate = 1;
-    audio.play().catch(() => {});
-    s.ms = ms;
-  } catch (e) { s.ms = null; }
-}
-// Give new radio to the browser's player, and drop radio that is too old.
-function pump(s) {
-  const sb = s.sb; if (S !== s || !sb || sb.updating) return;
-  try {
-    const b = sb.buffered;
-    if (b.length && b.end(b.length - 1) - b.start(0) > HIST + 40) { sb.remove(b.start(0), b.end(b.length - 1) - HIST); return; }
-    if (s.appended < s.base) s.appended = s.base;
-    if (s.appended >= s.total) return;
-    const fr = s.frames.slice(s.appended - s.base);
-    let data;
-    if (s.mime.startsWith('audio/mp4')) {
-      data = mp4Seg(fr, s.appended, Math.round(s.fd * s.sr), s.seq++);
-      if (s.appended === 0) data = join([mp4Init(s.hdr), data]);
-    } else data = join(fr);
-    sb.appendBuffer(data); s.appended = s.total;
-  } catch (e) {
-    if (e.name === 'QuotaExceededError') { try { sb.remove(0, Math.max(1, audio.currentTime - 30)); } catch (x) {} }
-    else { s.sb = null; chooseFallback(s); }
-  }
-}
-function chooseFallback(s) { try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {} s.mode = 'wa'; s.minD = s.dur + s.Q * s.fd + 0.8; s.D = Math.max(s.D, s.minD); s.offset = NaN; }
-
-function arrived(s) {
-  const l = s.total * s.fd - wall();                            // live radio at clock time t is t + L
-  if (l > s.L + 0.2) s.Lt = wall();                             // the station still sends its start burst
-  s.L = Math.max(s.L, l);
-  const extra = s.frames.length - Math.ceil((HIST + 10) / s.fd);
-  if (extra > 0) { const k = Math.ceil(extra / s.N) * s.N; s.frames.splice(0, k); s.base += k; }
-  if (s.mode === 'mse') pump(s);
-  if (!s.started && s.mode && s.total * s.fd > 1.5 && wall() - s.Lt > 1.2) { s.started = true; s.D = s.keepD || s.minD; enable(true); say(s.keepD ? 'Stream connected again. Check the sync.' : GUIDE); }
-  analyse(s);
-}
-
-// One piece of radio (about half a second), decoded with extra frames before and after it
-// so that pieces join without a click.
-function getChunk(s, c) {
-  let e = s.chunks.get(c); if (e) return e;
-  const a = Math.max(s.base, c * s.N - s.P), b = (c + 1) * s.N + s.Q;
-  if (b > s.total || c * s.N < s.base) return null;
-  let len = 0; for (let i = a; i < b; i++) len += s.frames[i - s.base].length;
-  const bytes = new Uint8Array(len); let o = 0;
-  for (let i = a; i < b; i++) { bytes.set(s.frames[i - s.base], o); o += s.frames[i - s.base].length; }
-  e = { pre: (c * s.N - a) * s.fd, buf: null, err: false };
-  e.p = new Promise((ok, no) => { const p = ctx.decodeAudioData(bytes.buffer, ok, no); if (p && p.catch) p.catch(() => {}); })
-    .then(buf => { e.buf = buf; e.pre = Math.max(0, buf.duration - (b - c * s.N) * s.fd); s.ok++; }, () => { e.err = true; s.bad++; });
-  s.chunks.set(c, e); return e;
-}
-
-// Measure all radio that arrives, in order, so auto sync can search it.
-async function analyse(s) {
-  if (s.busy) return; s.busy = true;
-  const rate = ctx.sampleRate;
-  while (S === s) {
-    const c = s.aNext;
-    if (c * s.N < s.base) { s.aNext = Math.ceil(s.base / s.N); s.feat = new Feat(rate); s.featT0 = null; continue; }
-    const e = getChunk(s, c); if (!e) break;
-    await e.p;
-    const n = Math.round((c + 1) * s.dur * rate) - Math.round(c * s.dur * rate), x = new Float32Array(n);
-    if (e.buf) {
-      const st = Math.round(e.pre * rate), ch = e.buf.numberOfChannels;
-      for (let k = 0; k < ch; k++) { const d = e.buf.getChannelData(k); for (let i = 0; i < n && st + i < d.length; i++) x[i] += d[st + i] / ch; }
-    }
-    if (s.featT0 == null) s.featT0 = c * s.dur;
-    s.feat.push(x); s.feat.trim(HIST * FPS);
-    s.aNext++;
-    if (s.bad >= 3 && !s.ok) { stop('This browser cannot decode this stream.'); return; }
-  }
-  s.busy = false;
-}
-
-function cut(s) { for (const g of s.sources) { try { g.src.stop(); } catch (e) {} g.disconnect(); } s.sources.clear(); }
-const curDelay = s => s.held ? wall() + s.L - s.heldMedia : s.D;
-
-function tick() {
-  const s = S; if (!s || !s.started) return;
-  const now = ctx.currentTime;
-  if (s.held) {
-    const d = curDelay(s);
-    if ((s.release != null && d >= s.release) || d > MAXD || s.heldMedia < s.base * s.fd + 0.5) resume(s);
-  }
-  if (s.mode === 'mse') runMse(s);
-  if (!s.held && s.mode === 'wa') {
-    // Radio position p plays at clock time p + D - L. Convert to audio time, and re-aim after any stall.
-    const want = s.D - s.L + (now - wall());
-    if (!(Math.abs(want - s.offset) < 0.15)) { s.offset = want; cut(s); s.next = Math.floor((now - s.offset) / s.dur); s.under = false; }
-    for (;;) {
-      const c = s.next; let t0 = c * s.dur + s.offset;
-      if (t0 > now + 1.0) break;
-      if (c * s.N < s.base) { s.next++; continue; }
-      const e = getChunk(s, c);
-      if (!e) { s.under = true; break; }                        // this radio has not arrived yet
-      if (!e.buf && !e.err) break;                              // still decoding
-      if (s.under && t0 < now + 0.03) { const d = now + 0.08 - t0; s.D += d; s.offset += d; t0 += d; }
-      s.under = false;
-      if (e.buf) {
-        const off = Math.max(0, now + 0.005 - t0);
-        if (off < s.dur) {
-          const src = ctx.createBufferSource(), g = ctx.createGain(), a = t0 + off, z = t0 + s.dur;
-          src.buffer = e.buf; src.connect(g); g.connect(master); g.src = src;
-          g.gain.setValueAtTime(0, a); g.gain.linearRampToValueAtTime(1, a + XF);
-          g.gain.setValueAtTime(1, z); g.gain.linearRampToValueAtTime(0, z + XF);
-          src.start(a, e.pre + off, s.dur - off + XF);
-          s.sources.add(g); src.onended = () => { g.disconnect(); s.sources.delete(g); };
-        }
-      }
-      s.next++;
-    }
-    for (let c = s.next; c < s.next + 3; c++) getChunk(s, c);
-  }
-  for (const c of s.chunks.keys()) if (c < s.aNext && (c < s.next - 2 || c > s.next + 8)) s.chunks.delete(c);
-  draw(s);
-}
-
-// Browser player: it plays by itself with no correction, so the sound stays clean.
-// The position changes only when the user (or auto sync) sets a delay.
-function seekTo(pos) {
-  const b = audio.buffered; if (!b.length) return;
-  audio.currentTime = Math.max(b.start(0) + 0.05, Math.min(pos, b.end(b.length - 1) - 0.3));
-}
-function runMse(s) {
-  if (!audio.buffered.length) return;
-  if (s.force) { s.force = false; setDelay(s, s.keepD || s.minD); return; }
-  if (s.held) return;
-  if (audio.paused) audio.play().catch(() => {});
-  const b = audio.buffered, t = audio.currentTime;
-  if (t !== s.lastT || b.end(b.length - 1) - t < 1) { s.lastT = t; s.movedAt = wall(); }
-  else if (wall() - s.movedAt > 4) { s.sb = null; chooseFallback(s); return; }   // has sound data but does not play: use Web Audio
-  const m = wall() + s.L - audio.currentTime;                   // measured delay
-  if (Math.abs(m - s.D) > 0.6 && wall() - s.seekAt > 2) s.D = m; // after a stall, show the true delay
-}
-const position = s => s.mode === 'mse' ? audio.currentTime : ctx.currentTime - s.offset;
-
-function draw(s) {
-  const d = curDelay(s);
-  $('delayTxt').textContent = (!s.held && d - s.minD < 0.05 ? 'Live' : d.toFixed(1) + ' s');
-  $('hold').textContent = s.held ? (s.release != null ? `Waiting ${Math.max(0, s.release - d).toFixed(0)} s… (tap to play now)` : '▶ TV shows it now: Resume') : '⏸ Pause radio';
-  $('hold').classList.toggle('on', s.held);
-  const have = Math.max(0, (s.total - s.base) * s.fd);
-  $('radioStatus').textContent = `Radio saved: ${Math.floor(have / 60)}:${String(Math.floor(have % 60)).padStart(2, '0')}`;
-  if (!busyAuto) { $('auto').disabled = have < AUTO_MIN; $('auto').textContent = have < AUTO_MIN ? `🎤 Auto sync in ${Math.ceil(AUTO_MIN - have)} s` : '🎤 Auto sync'; }
-}
-const AUTO_MIN = 45;                 // seconds of saved radio needed before auto sync
-
-function hold(s) { s.movedAt = wall() + 1e9; s.held = true; s.release = null; s.heldMedia = position(s); if (s.mode === 'mse') audio.pause(); cut(s); }
-function resume(s) { s.movedAt = wall(); s.D = Math.max(s.minD, Math.min(MAXD, wall() + s.L - s.heldMedia)); s.held = false; s.release = null; s.offset = NaN; s.seekAt = wall(); if (s.mode === 'mse') audio.play().catch(() => {}); }
-// Set the delay. If the app has not saved enough radio yet, wait silently until it has.
-function setDelay(s, d) {
-  d = Math.max(s.minD, Math.min(MAXD, d));
-  const oldest = s.base * s.fd + s.P * s.fd + 0.3, pos = wall() + s.L - d;
-  s.seekAt = s.movedAt = wall();
-  if (pos < oldest) { s.held = true; s.release = d; s.heldMedia = oldest; if (s.mode === 'mse') { audio.pause(); seekTo(oldest); } cut(s); }
-  else { s.D = d; s.held = false; s.release = null; if (s.mode === 'mse') { seekTo(pos); audio.play().catch(() => {}); } }
-}
-
-function enable(on) { $('syncCard').hidden = !on; }
-
-function stop(msg) {
-  const s = S; S = null;
-  if (s) { s.ac.abort(); cut(s); }
-  try { audio.pause(); audio.removeAttribute('src'); audio.load(); } catch (e) {}
-  enable(false);
-  $('play').textContent = '▶ Play radio'; $('radioStatus').textContent = msg || '';
-  if (lock) { try { lock.release(); } catch (e) {} lock = null; }
-}
-
-async function start(url, keepD, tries) {
-  const s = S = newSession(); s.keepD = keepD; attach(s);
-  try { await read(url, s); }
-  catch (e) {
-    if (S !== s) return;                                        // stopped by the user
-    const wasPlaying = s.started, d = wasPlaying ? curDelay(s) : keepD;
-    cut(s);
-    if (wasPlaying || (tries || 0) < 2) {
-      $('radioStatus').textContent = 'Stream lost. Connecting again…';
-      await new Promise(r => setTimeout(r, 1500));
-      if (S === s) start(url, d, wasPlaying ? 0 : (tries || 0) + 1);
-    } else stop('Could not play this stream: ' + (/load failed|failed to fetch|networkerror/i.test(e.message) ? 'the station did not answer, or it does not allow web players' : e.message) + '.');
-  }
-}
-
-$('play').onclick = async () => {
-  if (S) { stop(); return; }
-  const url = $('station').value === 'custom' ? $('custom').value.trim() : $('station').value;
-  if (!url) return;
-  setup();
-  $('play').textContent = '⏹ Stop radio'; $('radioStatus').textContent = 'Connecting…';
-  start(url);                                                   // starts the player inside this tap (iPhone needs that)
-  ctx.resume().catch(() => {});
-  keepAwake();
-};
-setInterval(tick, 60);
-
-const AFTER = 'If it is a little off, tap Sooner or Later.';
-$('hold').onclick = () => {
-  const s = S; if (!s || !s.started) return;
-  if (s.held) { resume(s); say('Radio resumed. ' + AFTER); }
-  else { hold(s); say('Radio paused. Tap the button when the TV shows the same snap.'); }
-};
-$('live').onclick = () => { if (S && S.started) { setDelay(S, 0); say(GUIDE); } };
-// Sooner / Later: one step for a tap, repeated steps while the button is held.
-document.querySelectorAll('[data-n]').forEach(b => {
-  let rep = null, wait = null;
-  const step = () => { const s = S; if (s && s.started) { setDelay(s, curDelay(s) + parseFloat(b.dataset.n)); say(AFTER); } };
-  const end = () => { clearTimeout(wait); clearInterval(rep); };
-  b.addEventListener('pointerdown', () => { end(); step(); wait = setTimeout(() => rep = setInterval(step, 120), 450); });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => b.addEventListener(ev, end));
-  b.addEventListener('contextmenu', e => e.preventDefault());
-});
-
-// ---- Test recording: microphone sound and the radio from the same time, in one WAV file ----
-let testFile = null;
-function keepTest(s, pcm, rate, info) {
-  if (pcm.length < rate * 5) return;
-  const a = Math.max(s.base, s.total - Math.ceil(240 / s.fd)), aac = join(s.frames.slice(a - s.base));
-  const meta = Object.assign({ v: 1, when: new Date().toISOString(), ua: navigator.userAgent, mode: s.mode, mime: s.mime, kind: s.kind,
-    micRate: rate, micSamples: pcm.length, radioFirstFrame: a, radioFirstTime: a * s.fd, frameSeconds: s.fd, L: s.L }, info);
-  const json = new TextEncoder().encode(JSON.stringify(meta)), pad = n => n + (n & 1);
-  const chunk = (id, bytes) => { const out = new Uint8Array(8 + pad(bytes.length)); out.set(chars(id)); new DataView(out.buffer).setUint32(4, bytes.length, true); out.set(bytes, 8); return out; };
-  const fmt = new DataView(new ArrayBuffer(16)); fmt.setUint16(0, 1, true); fmt.setUint16(2, 1, true); fmt.setUint32(4, rate, true); fmt.setUint32(8, rate * 2, true); fmt.setUint16(12, 2, true); fmt.setUint16(14, 16, true);
-  const body = join([chars('WAVE'), chunk('fmt ', new Uint8Array(fmt.buffer)), chunk('data', new Uint8Array(Int16Array.from(pcm).buffer)), chunk('json', json), chunk('aac ', aac)]);
-  const head = new Uint8Array(8); head.set(chars('RIFF')); new DataView(head.buffer).setUint32(4, body.length, true);
-  testFile = new File([head, body], 'sooner-sync-test.wav', { type: 'audio/wav' });
-  $('send').hidden = false; $('sendNote').hidden = false;
-}
-$('send').onclick = async () => {
-  if (!testFile) return;
-  try { if (navigator.canShare && navigator.canShare({ files: [testFile] })) { await navigator.share({ files: [testFile], title: 'Sooner Sync test recording' }); return; } }
-  catch (e) { if (e.name === 'AbortError') return; }
-  const a = document.createElement('a'); a.href = URL.createObjectURL(testFile); a.download = testFile.name; document.body.appendChild(a); a.click(); a.remove();
-};
-
-// ---- Auto sync ----
-$('auto').onclick = async () => {
-  const s = S; if (!s || busyAuto) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { say('This browser gives no microphone access. Open the page with https in Safari or Chrome.'); return; }
-  busyAuto = true; $('auto').disabled = true;
-  let stream;
-  session('play-and-record');
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
-  catch (e) { session('playback'); busyAuto = false; say('Microphone blocked: ' + e.message); return; }
-  try { await ctx.resume(); } catch (e) {}
-  if (s.held) resume(s);
-  master.gain.value = 0; audio.muted = true;                    // radio silent, so the phone hears only the TV
-  const rate = ctx.sampleRate, mic = ctx.createMediaStreamSource(stream), node = ctx.createScriptProcessor(4096, 1, 1), feat = new Feat(rate);
-  let micT0 = null, peak = 0, lvl = 0;
-  const DS = 16000, pcm = []; let acc = 0, cnt = 0, ph = 0;   // 16 kHz copy of the microphone, for the test recording
-  node.onaudioprocess = ev => {
-    const x = ev.inputBuffer.getChannelData(0);
-    if (micT0 == null) micT0 = ctx.currentTime - x.length / rate;
-    let q = 0; for (let i = 0; i < x.length; i++) q += x[i] * x[i];
-    lvl = Math.sqrt(q / x.length); if (lvl > peak) peak = lvl;
-    feat.push(x);
-    for (let i = 0; i < x.length; i++) { acc += x[i]; cnt++; ph += DS / rate; if (ph >= 1) { ph -= 1; pcm.push(Math.max(-32768, Math.min(32767, Math.round(acc / cnt * 32767)))); acc = 0; cnt = 0; } }
+  // ---------- status text ----------
+  var PLAIN = {
+    'receiving initial burst': 'Connecting to the station…', 'reconnecting': 'Connection lost. Reconnecting…',
+    'starting': 'Starting…', 'resuming': '', 'network stall, waiting for audio': 'Waiting for the station…'
   };
-  mic.connect(node); node.connect(sink);
-  const MIN = 20, MAX = 45, hop = feat.hop / rate;
-  // Audio-time offset that lines the radio up with the TV, for a match at radio index r.at.
-  const offsetFor = r => micT0 - (s.featT0 + (s.feat.base + r.at) * hop);
-  let found = null, prev = null, tried = MIN - 5, r = null, shown = null;
-  const begin = wall();
-  while (S === s && found == null) {
-    await new Promise(res => setTimeout(res, 250));
-    const t = feat.n / FPS;
-    $('micLvl').style.width = Math.max(0, Math.min(100, (20 * Math.log10(lvl + 1e-9) + 70) / 60 * 100)) + '%';
-    say(`Listening to the TV… up to ${Math.max(0, Math.ceil(MAX - t))} s. Keep the phone near the TV speaker.`);
-    if (wall() - begin > 4 && peak < 1e-5) break;               // microphone is silent
-    if (wall() - begin > MAX + 8) break;
-    if (t >= tried + 5 || t >= MAX) {
-      tried = Math.floor(t);
-      r = locate(feat.E, 0, feat.E[0].length - 1, s.feat.E);
-      if (r) shown = r;
-      const off = sure(r) ? offsetFor(r) : null;
-      if (off != null && prev != null && Math.abs(off - prev) < 0.3) found = off;
-      prev = off;
-      if (found == null && t >= MAX) {
-        // Last try with the first 25 seconds only. This can also find a radio that is behind the TV.
-        const r2 = locate(feat.E, 0, 25 * FPS, s.feat.E);
-        if (sure(r2) && r2.best - Math.max(0, r2.second) > 0.25) { found = offsetFor(r2); shown = r2; }
-        break;
-      }
-    }
+  function plain(st) {
+    if (st.status === 'error') return 'The radio stopped: ' + st.message;
+    if (st.status === 'playing' || st.status === 'paused') return '';
+    if (/^waiting for history/.test(st.message)) return 'Saving radio to build the delay… ' + st.message.replace(/^waiting for history: /, '');
+    if (/tap to resume/.test(st.message)) return 'Sound is off. Tap anywhere to turn it on.';
+    return st.message in PLAIN ? PLAIN[st.message] : (st.message || '');
   }
-  stream.getTracks().forEach(t => t.stop());
-  mic.disconnect(); node.disconnect(); node.onaudioprocess = null;
-  session('playback');
-  try { await ctx.resume(); } catch (e) {}
-  master.gain.value = 1; audio.muted = false;
-  $('micLvl').style.width = '0'; busyAuto = false;
-  if (S !== s) return;
-  const have = (s.total - s.base) * s.fd;
-  const dFound = found == null ? null : found - (ctx.currentTime - wall()) + s.L;
-  keepTest(s, pcm, DS, { micStartLive: micT0 - (ctx.currentTime - wall()) + s.L, ctxRate: rate, peak, delayBefore: curDelay(s), delayFound: dFound, match: shown && { best: shown.best, second: shown.second, z: shown.z } });
-  if (peak < 1e-5) { say('The microphone gave no sound. Allow the microphone for this page, then try again.'); return; }
-  if (found == null) {
-    say(`Not sure${shown ? ` (match ${Math.round(Math.max(0, shown.best) * 100)}%)` : ''}. ` + (have < 150 ? 'Try again in one minute, during live play. Or use Pause.' : 'Try again during live play with the TV louder. Or use Pause.'));
-    return;
+  function setStatus(t, bad) { $('status').textContent = t; $('status').className = 'status' + (bad ? ' bad' : ''); }
+
+  function showDelay() {
+    var d = pending !== null ? pending : (player ? player.getDelay() : 0);
+    $('delay').innerHTML = d.toFixed(d < 100 ? 2 : 1) + '<small> s</small>';
   }
-  const d = found - (ctx.currentTime - wall()) + s.L;           // delay that this match needs
-  if (d < s.minD - 0.3) {
-    say(`The radio is about ${Math.ceil(s.minD - d)} s behind the TV. Pause the TV for ${Math.ceil(s.minD - d) + 2} s or more, then run auto sync again.`);
-    return;
+  function showPhase() {
+    var t = { play: 'Tap Pause when the radio calls the snap.',
+      paused: 'Now tap Resume when the TV shows that same snap.',
+      resumed: 'Close? Use Sooner or Later to fix it. Check again on the next play.' }[phase] || '';
+    $('step').textContent = t;
+    $('hold').textContent = phase === 'paused' ? '▶ Resume radio' : '⏸ Pause radio';
+    $('hold').className = 'big' + (phase === 'paused' ? ' resume' : '');
+    document.querySelectorAll('[data-n]').forEach(function (b) { b.disabled = phase === 'paused'; });
+    $('live').disabled = phase === 'paused';
   }
-  setDelay(s, d);
-  say(`Synced ✓ (match ${Math.round(shown.best * 100)}%). ` + AFTER);
-};
+
+  // ---------- play / stop ----------
+  $('play').onclick = function () {
+    if (player) return;
+    if (!SoonerWC.supported()) { setStatus('This browser cannot run the player. On iPhone it needs iOS 26 or newer.', true); return; }
+    var s = station;
+    player = SoonerWC.create({ url: s.url, delay: START, onState: onState });
+    player.start();                       // inside the tap: unlocks sound on iPhone
+    note('play ' + s.url);
+    $('play').classList.add('hidden'); $('change').disabled = true;
+    $('syncCard').classList.remove('hidden');
+    phase = 'play'; showPhase(); keepAwake();
+    if (s.source !== 'builtin') ST.probe(s.url).then(function (r) {
+      note('probe ' + (r.ok ? r.kind : r.reason));
+      if (!r.ok) { stop(); setStatus(r.reason, true); }
+      else if (r.kind !== 'aac') { stop(); setStatus('This station sends MP3. This page plays AAC streams only.', true); }
+    });
+  };
+  function onState(st) {
+    if (!player) return;                  // a stopped player sends one last message; ignore it
+    if (!last || last.status !== st.status || last.message !== st.message) note(st.status + (st.message ? ' (' + st.message + ')' : ''));
+    last = st;
+    setStatus(plain(st), st.status === 'error');
+    if (st.status === 'error') { stop(); return; }
+    showDelay();
+  }
+  function stop() {
+    var p = player; player = null; pending = null; phase = 'idle';
+    if (p) { try { p.stop(); } catch (e) { /* ignore */ } }
+    $('play').classList.remove('hidden'); $('change').disabled = false;
+    $('syncCard').classList.add('hidden'); setStatus('');
+    if (lock) { try { lock.release(); } catch (e) { /* ignore */ } lock = null; }
+  }
+  $('stop').onclick = function () { note('stop'); stop(); };
+
+  async function keepAwake() { try { if (navigator.wakeLock && !document.hidden) lock = await navigator.wakeLock.request('screen'); } catch (e) { /* optional */ } }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && player) keepAwake(); });
+
+  // ---------- sync controls ----------
+  $('hold').onclick = function () {
+    if (!player) return;
+    if (phase === 'paused') { player.resume(); phase = 'resumed'; note('resume, delay ' + player.getDelay().toFixed(2)); }
+    else { player.pause(); phase = 'paused'; note('pause'); }
+    showPhase(); showDelay();
+  };
+  $('live').onclick = function () { if (!player) return; pending = null; player.setDelay(START); phase = 'play'; note('start over'); showPhase(); showDelay(); };
+
+  function nudge(n) {
+    if (!player || phase === 'paused') return;
+    var base = pending !== null ? pending : player.getDelay();
+    pending = Math.min(MAX, Math.max(MIN, Math.round((base + n) * 100) / 100));
+    showDelay();
+    clearTimeout(commitTimer); commitTimer = setTimeout(commit, 450);   // apply once the taps stop
+  }
+  function commit() {
+    if (!player || pending === null) return;
+    note('set delay ' + pending.toFixed(2)); player.setDelay(pending); pending = null; showDelay();
+  }
+  document.querySelectorAll('[data-n]').forEach(function (b) {
+    var n = +b.dataset.n, t1 = null, t2 = null;
+    function end() { clearTimeout(t1); clearInterval(t2); t1 = t2 = null; }
+    b.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); nudge(n);
+      t1 = setTimeout(function () { t2 = setInterval(function () { nudge(n); }, Math.abs(n) >= 5 ? 300 : 90); }, 450);
+    });
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) { b.addEventListener(ev, end); });
+    b.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  });
+  setInterval(function () { if (player) showDelay(); }, 200);
+
+  // ---------- station picker ----------
+  function li(s, buttons) {
+    var el = document.createElement('li'), nm = document.createElement('div');
+    nm.className = 'nm'; nm.textContent = s.name;
+    var sm = document.createElement('small');
+    sm.textContent = [s.state, s.codec, s.bitrate ? s.bitrate + ' kbps' : '', s.note].filter(Boolean).join(' · ');
+    nm.appendChild(sm); el.appendChild(nm);
+    buttons.forEach(function (b) { el.appendChild(b); });
+    return el;
+  }
+  function btn(text, fn) { var b = document.createElement('button'); b.textContent = text; b.onclick = fn; return b; }
+  function choose(s, msgEl) {
+    msgEl.textContent = 'Checking the station…'; msgEl.className = 'status';
+    ST.probe(s.url).then(function (r) {
+      if (!r.ok) { msgEl.textContent = s.name + ': ' + r.reason; msgEl.className = 'status bad'; return; }
+      if (r.kind !== 'aac') { msgEl.textContent = s.name + ': this station sends MP3. This page plays AAC streams only.'; msgEl.className = 'status bad'; return; }
+      msgEl.textContent = ''; setStation(s); closePick();
+    });
+  }
+  function drawFavs() {
+    var ul = $('favList'); ul.innerHTML = '';
+    ST.builtin.forEach(function (s) { ul.appendChild(li(s, [btn('Use', function () { setStation(s); closePick(); })])); });
+    ST.favorites().forEach(function (s) {
+      ul.appendChild(li(s, [btn('Use', function () { choose(s, $('searchMsg')); }),
+        btn('✕', function () { ST.removeFavorite(s.id); drawFavs(); })]));
+    });
+  }
+  function openPick() { $('pickCard').classList.remove('hidden'); drawFavs(); $('pickCard').scrollIntoView({ behavior: 'smooth' }); }
+  function closePick() { $('pickCard').classList.add('hidden'); $('searchMsg').textContent = ''; }
+  $('change').onclick = openPick; $('closePick').onclick = closePick;
+  function doSearch() {
+    var q = $('q').value.trim(); if (!q) return;
+    $('results').innerHTML = ''; $('searchMsg').textContent = 'Searching…'; $('searchMsg').className = 'status';
+    ST.search(q).then(function (list) {
+      list = list.filter(function (s) { return !/mp3/i.test(s.codec); });
+      $('searchMsg').textContent = list.length ? '' : 'No AAC stations found. Try a city or a word such as ESPN. Or paste a stream link.';
+      list.forEach(function (s) {
+        $('results').appendChild(li(s, [btn('Use', function () { ST.saveFavorite(s); choose(s, $('searchMsg')); }),
+          btn('☆', function (e) { ST.saveFavorite(s); e.target.textContent = '★'; drawFavs(); })]));
+      });
+    });
+  }
+  $('go').onclick = doSearch;
+  $('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
+  $('useLink').onclick = function () {
+    var s = ST.fromUrl($('link').value);
+    if (!s) { $('searchMsg').textContent = 'That does not look like a web address.'; $('searchMsg').className = 'status bad'; return; }
+    s.name = 'Link: ' + s.name; ST.saveFavorite(s); choose(s, $('searchMsg'));
+  };
+
+  // ---------- report ----------
+  $('report').onclick = function () {
+    var r = { time: new Date().toISOString(), page: location.href, userAgent: navigator.userAgent,
+      supported: SoonerWC.supported(), station: station, phase: phase,
+      delay: player ? player.getDelay() : null, stats: player ? player.stats() : null, recent: log.slice(-40) };
+    var text = JSON.stringify(r, null, 1);
+    var ok = function () { $('reportMsg').textContent = 'Report copied. Paste it in a message.'; };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, function () { fallback(text); ok(); });
+    else { fallback(text); ok(); }
+  };
+  function fallback(text) {
+    var t = document.createElement('textarea'); t.value = text; t.setAttribute('readonly', '');
+    t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select();
+    try { document.execCommand('copy'); } catch (e) { /* ignore */ }
+    document.body.removeChild(t);
+  }
+  window.__sooner = { get player() { return player; }, log: log };   // for testing
+})();
 </script>
 </body>
 </html>
