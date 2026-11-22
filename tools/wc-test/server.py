@@ -52,7 +52,7 @@ class H(BaseHTTPRequestHandler):
         if u.path == '/info':
             self.hdr(200, 'application/json')
             self.wfile.write(json.dumps({'T0': T0, 'START': START, 'RATE': RATE, 'conns': st['conns']}).encode()); return
-        f = '/home/user/sooner-sync/wc-player.js' if u.path == '/wc-player.js' else os.path.join(HERE, os.path.basename(u.path) or 'test.html')
+        f = os.path.join(HERE, '..', '..', 'wc-player.js') if u.path == '/wc-player.js' else os.path.join(HERE, os.path.basename(u.path) or 'test.html')
         if not os.path.exists(f): self.hdr(404, 'text/plain'); return
         self.hdr(200, 'application/javascript' if f.endswith('.js') else 'text/html')
         self.wfile.write(open(f, 'rb').read())

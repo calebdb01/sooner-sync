@@ -408,11 +408,14 @@
       if (s.fatal) s.status = 'error';
       else if (s.paused) s.status = 'paused';
       else if (!s.burstEnded) { s.status = 'connecting'; s.message = s.splicing ? 'reconnecting' : 'receiving initial burst'; }
-      else if (s.w.flowing && ctx && ctx.state === 'running') { s.status = 'playing'; s.message = 'decoder: ' + s.mode; }
+      else if (s.w.flowing && ctx && ctx.state === 'running') { s.stallSince = 0; s.status = 'playing'; s.message = 'decoder: ' + s.mode; }
       else {
         s.status = 'waiting';
         if (ctx && ctx.state !== 'running') s.message = 'audio ' + ctx.state + ': tap to resume';
-        else if (!s.needSeek) s.message = s.segPlayed ? 'network stall, waiting for audio' : 'starting';
+        else if (!s.needSeek) {
+          if (!s.stallSince) s.stallSince = Date.now();          // a short gap after a seek or resume is normal
+          s.message = !s.segPlayed ? 'starting' : (Date.now() - s.stallSince < 1500 || Date.now() - (s.resumedAt || 0) < 2000) ? 'resuming' : 'network stall, waiting for audio';
+        }
       }
       try {
         onState({ status: s.status, delay: getDelay(), bufferedSeconds: s.rate ? received() - oldest() : 0, minDelay: MIN_DELAY, message: s.message });
@@ -481,7 +484,7 @@
     }
     function resume() {
       if (!s.paused) return;
-      s.paused = false;
+      s.paused = false; s.resumedAt = Date.now();
       resumeCtx();
       s.target = currentDelay();          // the paused time is now part of the delay
       if (node) node.port.postMessage({ t: 'play', on: true });

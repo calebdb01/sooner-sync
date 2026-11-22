@@ -1,0 +1,68 @@
+<!doctype html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sim test</title>
+<style>
+  body { font: 16px -apple-system, sans-serif; margin: 16px; background: #111; color: #eee; }
+  button { font-size: 28px; width: 100%; padding: 40px 0; border-radius: 14px; border: 0; background: #841617; color: #fff; }
+  #out { white-space: pre-wrap; font: 12px ui-monospace, monospace; margin-top: 12px; }
+</style>
+</head><body>
+<button id="go">Tap to start</button>
+<div id="out">loading</div>
+<script>
+  // Report every console error and page error to the local server.
+  var Q = new URLSearchParams(location.search), RUN = Q.get('run') || ('r' + Date.now());
+  function post(o) {
+    o.run = RUN; o.t = +(performance.now() / 1000).toFixed(3);
+    try { fetch('/report', { method: 'POST', body: JSON.stringify(o), keepalive: true }); } catch (e) { /* ignore */ }
+  }
+  var cerr = console.error; console.error = function () { post({ k: 'console.error', a: [].map.call(arguments, String) }); cerr.apply(console, arguments); };
+  var cwarn = console.warn; console.warn = function () { post({ k: 'console.warn', a: [].map.call(arguments, String) }); cwarn.apply(console, arguments); };
+  addEventListener('error', function (e) { post({ k: 'pageerror', msg: e.message, src: e.filename + ':' + e.lineno }); });
+  addEventListener('unhandledrejection', function (e) { post({ k: 'rejection', msg: String(e.reason) }); });
+  post({ k: 'load', ua: navigator.userAgent, href: location.href,
+    has: { AudioDecoder: typeof AudioDecoder, EncodedAudioChunk: typeof EncodedAudioChunk, AudioWorkletNode: typeof AudioWorkletNode, audioSession: !!navigator.audioSession } });
+</script>
+<script src="/wc-player.js"></script>
+<script>
+  post({ k: 'supported', v: SoonerWC.supported() });
+  var out = document.getElementById('out'), p = null, states = [], lastStatus = '';
+  var URL_ = Q.get('src') || 'https://das-edge60-sa48-futuri-chi03.cdnstream.com/11317_96k.aac';
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  function snap(label) {
+    var s = p.stats(); s.delay = p.getDelay(); s.label = label || '';
+    s.audioSession = navigator.audioSession ? navigator.audioSession.type + '/' + navigator.audioSession.state : 'none';
+    return s;
+  }
+  document.getElementById('go').onclick = function () {
+    if (p) return;
+    p = SoonerWC.create({ url: URL_, delay: +(Q.get('delay') || 5), onState: function (st) {
+      if (st.status !== lastStatus) { lastStatus = st.status; states.push([+(performance.now() / 1000).toFixed(2), st.status, st.message]); post({ k: 'state', st: st }); }
+      out.textContent = st.status + '  delay ' + st.delay.toFixed(2) + ' s\n' + st.message + '\n' + JSON.stringify(p.stats(), null, 1);
+    } });
+    p.start();            // inside the tap, before any await
+    document.getElementById('go').textContent = 'Running';
+    setInterval(function () { post({ k: 'stats', s: snap() }); }, 1000);
+    if (Q.get('auto') === '1') script();
+  };
+  async function waitPlaying(max) {
+    var t = Date.now(); while (p.stats().state !== 'playing' && Date.now() - t < max) await sleep(100);
+    return (Date.now() - t) / 1000;
+  }
+  async function script() {
+    post({ k: 'step', name: 'start', waited: await waitPlaying(60000) });
+    await sleep(30000);
+    var a = p.getDelay(); post({ k: 'step', name: 'before pause', s: snap() });
+    p.pause(); await sleep(5000); p.resume(); await sleep(2000);
+    post({ k: 'step', name: 'after pause 5 s', delta: p.getDelay() - a, s: snap() });
+    var t = Date.now(); p.setDelay(20);
+    await sleep(200); var w = await waitPlaying(30000);
+    post({ k: 'step', name: 'setDelay 20', audibleAfter: (Date.now() - t) / 1000, waited: w });
+    await sleep(15000); post({ k: 'step', name: 'at 20', s: snap() });
+    p.setDelay(5); await sleep(200); await waitPlaying(30000);
+    await sleep(15000); post({ k: 'step', name: 'at 5', s: snap() });
+    post({ k: 'step', name: 'done', states: states });
+  }
+</script>
+</body></html>
